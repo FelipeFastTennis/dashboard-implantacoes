@@ -408,7 +408,7 @@ async function init() {
       resp:     p.responsavel?.nome || '—',
       unidade:  p.unidade?.nomeFantasia || '—',
       dtI:      p.dtInicio?.slice(0,10),
-      dtF:      p.dtFimPlanejamento?.slice(0,10) || p.dtFim?.slice(0,10),
+      dtF:      p.dtFim?.slice(0,10) || p.dtFimPlanejamento?.slice(0,10), // Data de Término Projetada
       dtC:      p.dtConclusao?.slice(0,10),
       unidade:  p.unidade?.nomeFantasia || '—',
       modelo:   p.modelo?.nome || '—',
