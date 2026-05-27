@@ -281,20 +281,20 @@ function calcProgress(tasks) {
 
 // Analistas conhecidos
 const ANALYSTS = [
-  {n:'Eduarda Charles Melo',       av:'#DBEAFE',tc:'#1D4ED8'},
-  {n:'André Dias Rabello',         av:'#D1FAE5',tc:'#065F46'},
-  {n:'Natalia Cristiane Amorim de Oliveira',av:'#FEF3C7',tc:'#92400E'},
-  {n:'Juliana Oliveira',           av:'#FCE7F3',tc:'#9D174D'},
-  {n:'Daniel Rocha',               av:'#FFE4E6',tc:'#9F1239'},
-  {n:'Felipe Ferreira de Souza',   av:'#F3F4F6',tc:'#374151'},
+  {n:'Eduarda Charles Melo',                   av:'#DBEAFE',tc:'#1D4ED8'},
+  {n:'André Dias Rabello',                     av:'#D1FAE5',tc:'#065F46'},
+  {n:'Natalia Cristiane Amorim de Oliveira',   av:'#FEF3C7',tc:'#92400E'},
+  {n:'Juliana Oliveira',                       av:'#FCE7F3',tc:'#9D174D'},
 ];
 
 let PROJS_ENRICHED = [];
 let TASKS_LOADED   = {};
 
 function setProgress(pct, text) {
-  document.getElementById('prog-bar').style.width = pct+'%';
-  if(text) document.getElementById('loading-text').textContent = text;
+  const bar  = document.getElementById('prog-bar');
+  const ltxt = document.getElementById('loading-text');
+  if(bar)  bar.style.width = pct+'%';
+  if(ltxt && text) ltxt.textContent = text;
 }
 
 async function init() {
@@ -378,12 +378,18 @@ async function init() {
     document.getElementById('upd').textContent = FMTL.format(new Date());
 
   } catch(err) {
-    document.getElementById('main').innerHTML = `
+    console.error('Dashboard error:', err);
+    const isCors = !err.message || err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed') || err.name === 'TypeError';
+    const main2 = document.getElementById('main');
+    if(main2) main2.innerHTML = `
       <div class="error-wrap">
-        <h3>Erro ao conectar com a API do Sults</h3>
-        <p>Verifique se o CORS está habilitado na API ou acesse via servidor.<br>
-        Detalhes: <code>${err.message}</code></p>
-        <button class="btn-refresh" onclick="init()" style="margin-top:12px">Tentar novamente</button>
+        <h3>${isCors ? 'Erro de CORS — API bloqueada pelo navegador' : 'Erro ao carregar dashboard'}</h3>
+        <p>${isCors
+          ? 'O navegador bloqueou a chamada à API do Sults. Solicite ao time técnico que libere o CORS para o domínio deste dashboard.'
+          : 'Ocorreu um erro inesperado. Tente recarregar a página.'
+        }<br><br><strong>Detalhes:</strong><br>
+        <code style="font-size:11px;word-break:break-all">${err.stack || err.message}</code></p>
+        <button onclick="init()" style="margin-top:14px;padding:6px 16px;background:#009688;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">↻ Tentar novamente</button>
       </div>`;
   }
   btn.disabled = false;
@@ -394,7 +400,7 @@ function renderDashboard(full) {
   const ativos  = all.filter(p=>p.status==='em_andamento');
   const pausados= all.filter(p=>p.status==='pausado');
   const concs   = all.filter(p=>p.status==='concluido');
-  const monit   = [...ativos,...pausados];
+  const monit   = [...ativos]; // pausados excluídos da análise
 
   const est = monit.filter(p=>p.dur>META).length;
   const rsc = monit.filter(p=>p.dur>META*.82&&p.dur<=META).length;
@@ -411,11 +417,10 @@ function renderDashboard(full) {
   // Analistas
   const aMap={};
   ANALYSTS.forEach(a=>{aMap[a.n]={...a,tot:0,est:0,rsc:0,ok:0,pau:0}});
-  all.filter(p=>p.status!=='concluido').forEach(p=>{
+  all.filter(p=>p.status==='em_andamento').forEach(p=>{
     const a=aMap[p.resp];
     if(!a) return;
     a.tot++;
-    if(p.status==='pausado') a.pau++;
     if(p.dur>META) a.est++;
     else if(p.dur>META*.82) a.rsc++;
     else a.ok++;
@@ -433,12 +438,16 @@ function renderDashboard(full) {
 
   document.getElementById('main').innerHTML = `
   <div class="sec">
-    <div class="sec-lbl">🎯 Meta de 8 meses — ${all.length} projetos carregados</div>
+    <div class="sec-lbl">🎯 Meta de 8 meses — ${all.length} projetos · ${ativos.length} em andamento · ${concs.length} concluídos</div>
     <div class="kpi-row" id="kpis"></div>
   </div>
   <div class="sec">
-    <div class="sec-lbl">📍 Projetos ativos por fase <small>· ${full?'tarefas reais':'estimativa por tempo — carregando tarefas...'}</small></div>
+    <div class="sec-lbl">📍 Projetos em andamento por fase <small>· ${full?'tarefas reais':'estimativa por tempo — carregando tarefas...'}</small></div>
     <div class="funnel" id="funnel"></div>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">👤 Analistas — desempenho contra a meta</div>
+    <div class="a-grid" id="agrid"></div>
   </div>
   <div class="sec">
     <div class="sec-lbl">📋 Classificação pela meta</div>
@@ -451,20 +460,16 @@ function renderDashboard(full) {
         <th>Progresso meta</th><th>Classificação</th>
       </tr></thead><tbody id="tbody"></tbody></table>
     </div></div>
-  </div>
-  <div class="sec">
-    <div class="sec-lbl">👤 Analistas — desempenho contra a meta</div>
-    <div class="a-grid" id="agrid"></div>
   </div>`;
 
   // KPIs
   document.getElementById('kpis').innerHTML=[
     {l:'Meta',v:'8 meses',s:'243 dias por unidade',c:'',hero:true},
-    {l:'Total projetos',v:all.length,s:`${ativos.length} ativos · ${pausados.length} pausados · ${concs.length} concluídos`,c:'var(--txt)'},
+    {l:'Total projetos',v:all.length,s:`${ativos.length} em andamento · ${concs.length} concluídos`,c:'var(--txt)'},
     {l:'Estourou a meta',v:est,s:'projetos ativos acima de 8m',c:'#DC2626'},
     {l:'Em risco',v:rsc,s:'entre 6,7 e 8 meses',c:'#EA580C'},
     {l:'No prazo',v:ok,s:'abaixo de 6,7 meses',c:'#16A34A'},
-    {l:'Monitorados',v:monit.length,s:'em andamento + pausados',c:'var(--txt)'},
+    {l:'Em andamento',v:ativos.length,s:'projetos ativos monitorados',c:'#2563EB'},
   ].map(k=>`<div class="kpi${k.hero?' hero':''}">
     <div class="kpi-label">${k.l}</div>
     <div class="kpi-value"${k.c?` style="color:${k.c}"`:''}>${k.v}</div>
@@ -482,8 +487,7 @@ function renderDashboard(full) {
       <div class="ph-tasks">${ph.tasks}</div>
       <div class="ph-count" style="color:${ph.c}">${items.length}</div>
       <div class="ph-sub">
-        ${nAtv?`<span class="badge b-blu">${nAtv} ativos</span>`:''}
-        ${nPau?`<span class="badge b-pau">${nPau} pausados</span>`:''}
+        ${items.length?`<span class="badge b-blu">${items.length} em andamento</span>`:''}
       </div>
       <div class="ph-items">
         ${items.slice(0,5).map(p=>`<div class="ph-item" title="${p.nome} · ${fn(p.resp)}" style="background:${ph.bg};color:${ph.c}">${p.nome.replace('Fast Tennis - ','FT ').replace('Fast Tennis ','FT ')}</div>`).join('')}
@@ -499,7 +503,6 @@ function renderDashboard(full) {
     {k:'risco',l:'🟠 Em risco'},
     {k:'ok',l:'🟢 No prazo'},
     {k:'atv',l:'Em andamento'},
-    {k:'pau',l:'⏸ Pausados'},
   ].map((t,i)=>`<button class="tab${i===0?' active':''}" onclick="setTab('${t.k}',this)">${t.l}<span class="tab-count">${TABS[t.k].length}</span></button>`).join('');
 
   window._TABS = TABS;
@@ -519,7 +522,7 @@ function renderDashboard(full) {
       <div class="a-stats">
         <div><div class="sv" style="color:#DC2626">${a.est}</div><div class="sl">estourou</div></div>
         <div><div class="sv" style="color:#EA580C">${a.rsc}</div><div class="sl">risco</div></div>
-        <div><div class="sv" style="color:#16A34A">${a.ok}</div><div class="sl">ok</div></div>
+        <div><div class="sv" style="color:#16A34A">${a.ok}</div><div class="sl">no prazo</div></div>
       </div>
       <div class="a-bar-wrap"><div class="a-bar" style="width:${pOk}%;background:${bc}"></div></div>
       <div class="a-bar-lbl"><span>no prazo da meta</span><span style="font-weight:700;color:${bc}">${pOk}%</span></div>
@@ -528,15 +531,18 @@ function renderDashboard(full) {
 }
 
 window.setTab = function(k, btn){
+  if(!document.getElementById('tbody')) return;
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   renderTable(k);
 };
 
 function renderTable(key){
+  const tbody = document.getElementById('tbody');
+  if(!tbody) return;
   const rows = window._TABS?.[key] || [];
   const full = window._FULL;
-  document.getElementById('tbody').innerHTML = rows.map(p => {
+  tbody.innerHTML = rows.map(p => {
     const pct = Math.min(Math.round(p.dur/META*100),200);
     const bc  = barColor(pct);
     const stBadge = p.status==='pausado'?'<span class="badge b-pau">Pausado</span>':'<span class="badge b-blu">Em andamento</span>';
