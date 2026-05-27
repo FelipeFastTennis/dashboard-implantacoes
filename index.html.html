@@ -130,6 +130,46 @@ tbody tr:hover td{background:#FAFAF8}
 .pp-fill{height:3px;border-radius:2px}
 .pp-pct{color:var(--t2);min-width:24px;text-align:right;font-family:'DM Mono',monospace}
 
+
+/* Expandable funnel */
+.ph-col{cursor:pointer;transition:box-shadow .15s}
+.ph-col:hover{box-shadow:inset 0 0 0 2px var(--teal)}
+.ph-col.active{box-shadow:inset 0 0 0 2px var(--teal);background:#FAFFFE}
+.ph-expand{display:none;grid-column:1/-1;background:var(--sur);border-top:2px solid var(--teal);padding:0}
+.ph-expand.open{display:block}
+.ph-expand-inner{padding:14px 16px}
+.ph-expand-title{font-size:11px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.ph-expand-close{cursor:pointer;font-size:16px;color:var(--t3);font-weight:400;line-height:1}
+.ph-expand-close:hover{color:var(--txt)}
+.exp-table{width:100%;border-collapse:collapse;font-size:12px}
+.exp-table thead th{background:var(--bg);padding:7px 10px;text-align:left;font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--brdm);white-space:nowrap}
+.exp-table tbody td{padding:7px 10px;border-bottom:1px solid var(--brd);vertical-align:middle}
+.exp-table tbody tr:last-child td{border-bottom:none}
+.exp-table tbody tr:hover td{background:#FAFFF8}
+.desvio-pos{color:var(--red);font-weight:600;font-family:'DM Mono',monospace;font-size:11px}
+.desvio-neg{color:var(--grn);font-weight:600;font-family:'DM Mono',monospace;font-size:11px}
+.desvio-ok{color:var(--t2);font-family:'DM Mono',monospace;font-size:11px}
+
+
+/* ── TIMELINE ───────────────────────────────────────────────────────────────── */
+.timeline-wrap{overflow-x:auto;padding-bottom:4px}
+.timeline-grid{display:grid;grid-template-columns:repeat(8,minmax(140px,1fr));gap:0;border:1px solid var(--brdm);border-radius:var(--r);overflow:hidden;min-width:900px}
+.tl-month{background:var(--sur);border-right:1px solid var(--brd)}
+.tl-month:last-child{border-right:none}
+.tl-month-hd{padding:10px 12px 8px;border-bottom:1px solid var(--brdm);display:flex;flex-direction:column;gap:2px}
+.tl-month-name{font-size:12px;font-weight:700;color:var(--txt)}
+.tl-month-count{font-size:10px;color:var(--t3)}
+.tl-month.current .tl-month-hd{background:var(--tlt)}
+.tl-month.current .tl-month-name{color:var(--teal)}
+.tl-month-body{padding:8px;display:flex;flex-direction:column;gap:4px;min-height:80px}
+.tl-unit{font-size:10px;padding:4px 7px;border-radius:4px;line-height:1.3;cursor:default;transition:opacity .15s}
+.tl-unit:hover{opacity:.8}
+.tl-unit-name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tl-unit-resp{font-size:9px;opacity:.7;margin-top:1px}
+.tl-month-past .tl-month-hd{background:var(--bg)}
+.tl-month-past .tl-month-name{color:var(--t3)}
+.tl-empty{font-size:10px;color:var(--t3);font-style:italic;padding:4px 2px}
+
 footer{text-align:center;padding:22px 0 30px;font-size:11px;color:var(--t3);font-family:'DM Mono',monospace}
 
 @media(max-width:1100px){.kpi-row{grid-template-columns:1fr 1fr 1fr}.funnel{grid-template-columns:1fr 1fr}}
@@ -174,23 +214,24 @@ const SIT_DONE = 1;
 
 // Fases do usuário
 const USER_PHASES = [
-  {id:1,l:'Busca de Ponto',         s:'F03–F04',tasks:'Pesquisa, aprovação GeoMarketing e Comitê',c:'#2563EB',bg:'#EFF6FF'},
-  {id:2,l:'Negociação e Contratos', s:'F05',    tasks:'Assinatura locação, CNPJ, contabilidade',  c:'#7C3AED',bg:'#F5F3FF'},
-  {id:3,l:'Planejamento e Projetos',s:'F06',    tasks:'Arquitetura, projeto executivo, alvará',    c:'#D97706',bg:'#FFFBEB'},
-  {id:4,l:'Execução de Obra',       s:'F07–F09',tasks:'Obra civil, quadra, instalações',           c:'#EA580C',bg:'#FFF7ED'},
-  {id:5,l:'Reta Final',             s:'F10–F17',tasks:'Mobiliários, RH, marketing, inauguração',   c:'#DC2626',bg:'#FEF2F2'},
+  {id:1,l:'Busca de Ponto',         s:'F03',    tasks:'Pesquisa de mercado, aprovação GeoMarketing e Comitê',  c:'#2563EB',bg:'#EFF6FF'},
+  {id:2,l:'Ponto: Neg. e Contratos',s:'F04',    tasks:'Aprovação do ponto, negociação e assinatura de locação', c:'#7C3AED',bg:'#F5F3FF'},
+  {id:3,l:'Planejamento e Projetos',s:'F06',    tasks:'Arquitetura, projeto executivo, alvará de obras',        c:'#D97706',bg:'#FFFBEB'},
+  {id:4,l:'Execução de Obra',       s:'F07–F09',tasks:'Obra civil, quadra e instalações',                      c:'#EA580C',bg:'#FFF7ED'},
+  {id:5,l:'Reta Final',             s:'F10–F17',tasks:'Mobiliários, RH, marketing e inauguração',               c:'#DC2626',bg:'#FEF2F2'},
 ];
 
 // Mapeamento fase Sults → fase usuário
 function mapPhase(codigo) {
   if(!codigo) return null;
   const n = parseInt(codigo.replace(/\D/g,''));
-  if(n<=2)  return null; // pré-implantação
-  if(n<=4)  return 1;
-  if(n===5) return 2;
-  if(n===6) return 3;
-  if(n<=9)  return 4;
-  return 5;
+  if(n<=2)  return null; // F01–F02: pré-implantação (irrelevante)
+  if(n===3) return 1;    // F03: Busca de Ponto
+  if(n===4) return 2;    // F04: Ponto — Negociação e Contratos
+  if(n===5) return null; // F05: Documentação — IGNORADA (corre em paralelo)
+  if(n===6) return 3;    // F06: Planejamento e Projetos
+  if(n<=9)  return 4;    // F07–F09: Execução de Obra
+  return 5;              // F10–F17: Reta Final
 }
 
 function days(a) {
@@ -227,15 +268,23 @@ async function fetchAllProjects() {
   return all;
 }
 
-async function fetchAllTasks(projId) {
+async function fetchAllTasks(projId, retries=2) {
   let all=[], page=0;
-  while(true){
-    const d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=100`);
-    all = all.concat(d.data||[]);
-    if(page+1 >= (d.totalPage||1) || (d.data||[]).length===0) break;
-    page++;
+  try {
+    while(true){
+      const d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=100`);
+      all = all.concat(d.data||[]);
+      if(page+1 >= (d.totalPage||1) || (d.data||[]).length===0) break;
+      page++;
+    }
+    return all;
+  } catch(e) {
+    if(retries > 0) {
+      await new Promise(r => setTimeout(r, 800));
+      return fetchAllTasks(projId, retries-1);
+    }
+    throw e;
   }
-  return all;
 }
 
 // Determina fase atual: fase com menor número com tarefas não concluídas
@@ -244,11 +293,14 @@ function getCurrentPhase(tasks) {
   tasks.forEach(t => {
     const cod = t.fase?.codigo;
     if(!cod) return;
+    const n = parseInt(cod.replace(/\D/g,''));
+    // F05 Documentação ignorada — corre em paralelo, não define a fase do projeto
+    if(n===5) return;
     if(!phases[cod]) phases[cod] = {total:0,done:0,cod};
     phases[cod].total++;
     if(t.situacao===SIT_DONE) phases[cod].done++;
   });
-  // Encontra primeira fase incompleta
+  // Encontra primeira fase incompleta (excluindo F05)
   const sorted = Object.values(phases).sort((a,b)=>{
     const na=parseInt(a.cod.replace(/\D/g,'')),nb=parseInt(b.cod.replace(/\D/g,''));
     return na-nb;
@@ -326,6 +378,7 @@ async function init() {
       dtI:      p.dtInicio?.slice(0,10),
       dtF:      p.dtFimPlanejamento?.slice(0,10) || p.dtFim?.slice(0,10),
       dtC:      p.dtConclusao?.slice(0,10),
+      unidade:  p.unidade?.nomeFantasia || '—',
       modelo:   p.modelo?.nome || '—',
       status:   p.concluido?'concluido':p.pausado?'pausado':p.ativo?'em_andamento':'inativo',
       dur:      p.dtInicio ? days(p.dtInicio.slice(0,10)) : 0,
@@ -348,7 +401,7 @@ async function init() {
     let loaded   = 0;
 
     // Paralelismo controlado: 4 por vez
-    const BATCH = 4;
+    const BATCH = 8;
     for(let i=0; i<active.length; i+=BATCH){
       const batch = active.slice(i, i+BATCH);
       await Promise.all(batch.map(async p => {
@@ -375,7 +428,9 @@ async function init() {
 
     setProgress(100, 'Concluído!');
     renderDashboard(true);
-    document.getElementById('upd').textContent = FMTL.format(new Date());
+    const totalCarregados = PROJS_ENRICHED.filter(p=>p.tasksLoaded).length;
+    const totalAtivos2 = PROJS_ENRICHED.filter(p=>p.status==='em_andamento').length;
+    document.getElementById('upd').textContent = FMTL.format(new Date()) + ` · tarefas: ${totalCarregados}/${totalAtivos2}`;
 
   } catch(err) {
     console.error('Dashboard error:', err);
@@ -408,10 +463,16 @@ function renderDashboard(full) {
 
   // Funil
   const phMap={};
+  phMap[0] = []; // Projetos aguardando carregamento de tarefas
   USER_PHASES.forEach(ph=>{phMap[ph.id]=[]});
   monit.forEach(p=>{
-    const uid = p.currentPhaseUID || (p.dur<META*.3?1:p.dur<META*.55?2:p.dur<META*.75?3:p.dur<META?4:5);
-    if(phMap[uid]) phMap[uid].push(p);
+    if(p.tasksLoaded && p.currentPhaseUID) {
+      // Fase real confirmada pelas tarefas
+      phMap[p.currentPhaseUID].push(p);
+    } else {
+      // Tarefas ainda não carregadas — fica em aguardando
+      phMap[0].push(p);
+    }
   });
 
   // Analistas
@@ -443,7 +504,12 @@ function renderDashboard(full) {
   </div>
   <div class="sec">
     <div class="sec-lbl">📍 Projetos em andamento por fase <small>· ${full?'tarefas reais':'estimativa por tempo — carregando tarefas...'}</small></div>
-    <div class="funnel" id="funnel"></div>
+    <div class="funnel" id="funnel" style="display:grid;grid-template-columns:repeat(5,1fr);position:relative"></div>
+    <div id="funnel-expand" class="ph-expand"></div>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">🗓 Previsão de inaugurações <small>· mai–dez 2026 · ordenado por data planejada</small></div>
+    <div class="timeline-wrap"><div class="timeline-grid" id="timeline-grid"></div></div>
   </div>
   <div class="sec">
     <div class="sec-lbl">👤 Analistas — desempenho contra a meta</div>
@@ -476,12 +542,34 @@ function renderDashboard(full) {
     <div class="kpi-sub">${k.s}</div>
   </div>`).join('');
 
-  // Funnel
+  // Funnel — salva phMap globalmente para o click handler
+  window._phMap = phMap;
+
+  const aguardando = phMap[0] || [];
+  const aguardandoCol = aguardando.length > 0 ? `
+    <div class="ph-col" style="border-top:3px solid #9E9E9E;opacity:0.7">
+      <div class="ph-name"><span style="width:8px;height:8px;border-radius:50%;background:#9E9E9E;display:inline-block;flex-shrink:0"></span><span style="color:#6B6A66">Carregando fase…</span></div>
+      <div class="ph-range">tarefas pendentes</div>
+      <div class="ph-tasks">Aguardando dados da API</div>
+      <div class="ph-count" style="color:#9E9E9E">${aguardando.length}</div>
+      <div class="ph-sub"><span class="badge b-pau">${aguardando.length} projeto${aguardando.length>1?'s':''}</span></div>
+      <div class="ph-items">
+        ${aguardando.slice(0,4).map(p=>`<div class="ph-item" style="background:#F1EFE8;color:#6B6A66">${p.nome.replace('Fast Tennis - ','FT ').replace('Fast Tennis ','FT ')}</div>`).join('')}
+        ${aguardando.length>4?`<div class="ph-more">+${aguardando.length-4} projetos</div>`:''}
+      </div>
+    </div>` : '';
+
+  // Ajustar grid para 6 colunas se tiver coluna de aguardando
+  const funnelEl = document.getElementById('funnel');
+  if(funnelEl) {
+    funnelEl.style.gridTemplateColumns = aguardando.length > 0
+      ? 'repeat(6,minmax(130px,1fr))'
+      : 'repeat(5,minmax(140px,1fr))';
+  }
+
   document.getElementById('funnel').innerHTML=USER_PHASES.map(ph=>{
     const items=phMap[ph.id]||[];
-    const nAtv=items.filter(x=>x.status==='em_andamento').length;
-    const nPau=items.filter(x=>x.status==='pausado').length;
-    return`<div class="ph-col" style="border-top:3px solid ${ph.c}">
+    return`<div class="ph-col" style="border-top:3px solid ${ph.c}" onclick="togglePhase(${ph.id})" data-ph="${ph.id}">
       <div class="ph-name"><span style="width:8px;height:8px;border-radius:50%;background:${ph.c};display:inline-block;flex-shrink:0"></span><span style="color:${ph.c}">${ph.l}</span></div>
       <div class="ph-range">${ph.s}</div>
       <div class="ph-tasks">${ph.tasks}</div>
@@ -494,7 +582,7 @@ function renderDashboard(full) {
         ${items.length>5?`<div class="ph-more">+${items.length-5} projetos</div>`:''}
       </div>
     </div>`;
-  }).join('');
+  }).join('') + aguardandoCol;
 
   // Tab bar
   document.getElementById('tab-bar').innerHTML=[
@@ -508,6 +596,71 @@ function renderDashboard(full) {
   window._TABS = TABS;
   window._FULL = full;
   renderTable('todos');
+
+  // ── Timeline de inaugurações ───────────────────────────────────────────────
+  const MONTHS = [
+    {key:'2026-05', label:'Maio',     short:'Mai/26'},
+    {key:'2026-06', label:'Junho',    short:'Jun/26'},
+    {key:'2026-07', label:'Julho',    short:'Jul/26'},
+    {key:'2026-08', label:'Agosto',   short:'Ago/26'},
+    {key:'2026-09', label:'Setembro', short:'Set/26'},
+    {key:'2026-10', label:'Outubro',  short:'Out/26'},
+    {key:'2026-11', label:'Novembro', short:'Nov/26'},
+    {key:'2026-12', label:'Dezembro', short:'Dez/26'},
+  ];
+  const todayKey = TS.slice(0,7); // '2026-05'
+
+  // Cores por analista
+  const ANALYST_COLORS = {
+    'Eduarda Charles Melo':                 {bg:'#DBEAFE',tc:'#1D4ED8'},
+    'André Dias Rabello':                   {bg:'#D1FAE5',tc:'#065F46'},
+    'Natalia Cristiane Amorim de Oliveira': {bg:'#FEF3C7',tc:'#92400E'},
+    'Juliana Oliveira':                     {bg:'#FCE7F3',tc:'#9D174D'},
+  };
+
+  // Agrupar projetos em andamento por mês do dtF
+  const byMonth = {};
+  MONTHS.forEach(m => { byMonth[m.key] = [] });
+
+  ativos.forEach(p => {
+    if(!p.dtF) return;
+    const mk = p.dtF.slice(0,7);
+    if(byMonth[mk]) {
+      byMonth[mk].push(p);
+    }
+  });
+
+  const tlEl = document.getElementById('timeline-grid');
+  if(tlEl) {
+    tlEl.innerHTML = MONTHS.map(m => {
+      const isPast   = m.key < todayKey;
+      const isCurrent= m.key === todayKey;
+      const items    = (byMonth[m.key]||[]).sort((a,b)=>a.dtF.localeCompare(b.dtF));
+      const cls      = isCurrent ? 'tl-month current' : isPast ? 'tl-month tl-month-past' : 'tl-month';
+
+      const units = items.map(p => {
+        const ac = ANALYST_COLORS[p.resp] || {bg:'#F1EFE8',tc:'#444441'};
+        const nomeUnidade = p.unidade && p.unidade!=='—' ? p.unidade : p.nome.replace('Fast Tennis - ','').replace('Fast Tennis ','');
+        const dia = p.dtF ? p.dtF.slice(8,10) : '';
+        return `<div class="tl-unit" style="background:${ac.bg};color:${ac.tc}" title="${p.nome}
+Analista: ${fn(p.resp)}
+Previsão: ${fmt(p.dtF)}">
+          <div class="tl-unit-name">${nomeUnidade}</div>
+          <div class="tl-unit-resp">${fn(p.resp)} · ${dia ? dia+'/'+m.key.slice(5,7) : '—'}</div>
+        </div>`;
+      }).join('');
+
+      return `<div class="${cls}">
+        <div class="tl-month-hd">
+          <div class="tl-month-name">${isCurrent ? '📍 ' : ''}${m.short}</div>
+          <div class="tl-month-count">${items.length ? items.length+' unidade'+( items.length>1?'s':'') : 'nenhuma prevista'}</div>
+        </div>
+        <div class="tl-month-body">
+          ${units || '<div class="tl-empty">–</div>'}
+        </div>
+      </div>`;
+    }).join('');
+  }
 
   // Analyst grid
   document.getElementById('agrid').innerHTML=ANALYSTS.map(({n})=>{
@@ -546,9 +699,11 @@ function renderTable(key){
     const pct = Math.min(Math.round(p.dur/META*100),200);
     const bc  = barColor(pct);
     const stBadge = p.status==='pausado'?'<span class="badge b-pau">Pausado</span>':'<span class="badge b-blu">Em andamento</span>';
-    const phLabel = p.currentPhaseUID
+    const phLabel = p.tasksLoaded && p.currentPhaseUID
       ? `<span class="badge" style="background:${USER_PHASES[p.currentPhaseUID-1].bg};color:${USER_PHASES[p.currentPhaseUID-1].c}">${USER_PHASES[p.currentPhaseUID-1].l}</span>`
-      : '<span class="badge b-pau">—</span>';
+      : p.tasksLoaded
+        ? '<span class="badge b-pau" title="Fase não identificada — pode não ter tarefas ativas">Sem fase ativa</span>'
+        : '<span class="badge" style="background:#F1EFE8;color:#9E9E9E">⟳ carregando</span>';
     const progReal = full && p.tasksLoaded && p.progPct!==null
       ? `<td class="td-mono">${p.progPct}% <span style="color:var(--t3);font-size:10px">(${p.progData?.doneAll||0}/${p.progData?.totalAll||0})</span></td>`
       : full ? `<td style="color:var(--t3);font-size:11px">—</td>` : '';
@@ -571,6 +726,86 @@ function renderTable(key){
     </tr>`;
   }).join('');
 }
+
+
+// ── FUNNEL EXPAND ────────────────────────────────────────────────────────────
+let _activePhase = null;
+
+window.togglePhase = function(phId) {
+  const expand  = document.getElementById('funnel-expand');
+  const cols    = document.querySelectorAll('.ph-col');
+  const ph      = USER_PHASES.find(p=>p.id===phId);
+  const items   = (window._phMap||{})[phId] || [];
+
+  // Toggle off if same phase clicked again
+  if(_activePhase === phId) {
+    _activePhase = null;
+    expand.classList.remove('open');
+    cols.forEach(c=>c.classList.remove('active'));
+    return;
+  }
+
+  _activePhase = phId;
+  cols.forEach(c=>c.classList.toggle('active', parseInt(c.dataset.ph)===phId));
+
+  const rows = [...items].sort((a,b)=>b.dur-a.dur).map(p=>{
+    const desvio  = p.dur - META;
+    const desvioM = Math.abs(desvio/30.4).toFixed(1);
+    const desvioLabel = desvio > 0
+      ? `<span class="desvio-pos">+${desvioM}m (+${desvio}d)</span>`
+      : desvio < 0
+        ? `<span class="desvio-neg">${desvioM}m antes</span>`
+        : `<span class="desvio-ok">Na meta</span>`;
+
+    const progReal = p.progPct !== null && p.progPct !== undefined
+      ? `${p.progPct}% <span style="color:var(--t3);font-size:10px">(${p.progData?.doneAll||0}/${p.progData?.totalAll||0})</span>`
+      : `<span style="color:var(--t3)">carregando…</span>`;
+
+    const metaClass = p.dur>META?'b-red':p.dur>META*.82?'b-ora':'b-grn';
+    const pct = Math.min(Math.round(p.dur/META*100),200);
+    const bc  = pct>100?'#DC2626':pct>82?'#EA580C':pct>60?'#D97706':'#16A34A';
+
+    return `<tr>
+      <td style="font-weight:500;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${p.nome}">${p.nome}</td>
+      <td style="color:var(--t2)">${fn(p.resp)}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:11px;font-weight:600">${mStr(p.dur)} <span style="color:var(--t3);font-weight:400">(${p.dur}d)</span></td>
+      <td>${progReal}</td>
+      <td>${desvioLabel}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div style="flex:1;height:5px;background:var(--bg);border-radius:3px;overflow:hidden;min-width:60px">
+            <div style="height:5px;border-radius:3px;width:${Math.min(pct,100)}%;background:${bc}"></div>
+          </div>
+          <span style="font-size:10px;font-weight:600;color:${bc};min-width:32px;text-align:right">${pct}%</span>
+        </div>
+      </td>
+      <td><span class="badge ${metaClass}">${p.meta.l}</span></td>
+    </tr>`;
+  }).join('');
+
+  expand.innerHTML = `<div class="ph-expand-inner">
+    <div class="ph-expand-title">
+      <span style="color:${ph.c}">● ${ph.l} — ${items.length} projeto${items.length!==1?'s':''}</span>
+      <span class="ph-expand-close" onclick="togglePhase(${phId})">✕</span>
+    </div>
+    <table class="exp-table">
+      <thead><tr>
+        <th>Projeto</th>
+        <th>Analista</th>
+        <th>Duração</th>
+        <th>Progresso real</th>
+        <th>Desvio da meta</th>
+        <th>% da meta</th>
+        <th>Classificação</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+  expand.classList.add('open');
+
+  // Scroll suave até o painel expandido
+  setTimeout(()=>expand.scrollIntoView({behavior:'smooth',block:'nearest'}),50);
+};
 
 // Start
 init();
