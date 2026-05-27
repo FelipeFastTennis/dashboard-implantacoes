@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Implantações · Sults Live</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F5F4F0;--sur:#fff;--brd:rgba(0,0,0,.07);--brdm:rgba(0,0,0,.12);
+  --txt:#18171A;--t2:#6B6A66;--t3:#A09F9A;--r:10px;--rsm:5px;
+  --sh:0 1px 3px rgba(0,0,0,.05),0 1px 2px rgba(0,0,0,.04);
+  --teal:#009688;--tlt:#E0F2F1;
+  --red:#DC2626;--rbg:#FEF2F2;--rt:#991B1B;
+  --ora:#EA580C;--obg:#FFF7ED;--ot:#9A3412;
+  --amb:#D97706;--abg:#FFFBEB;--at:#92400E;
+  --grn:#16A34A;--gbg:#F0FDF4;--gt:#14532D;
+  --blu:#2563EB;--bbg:#EFF6FF;--bt:#1D4ED8;
+  --pur:#7C3AED;--pbg:#F5F3FF;--pt:#4C1D95;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--txt);font-size:14px;line-height:1.5}
+header{background:var(--sur);border-bottom:1px solid var(--brdm);padding:11px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:var(--sh)}
+.logo{display:flex;align-items:center;gap:9px}
+.logo-badge{background:var(--txt);color:#fff;font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;letter-spacing:.06em}
+.logo-title{font-size:14px;font-weight:600}
+.hdr-r{display:flex;align-items:center;gap:10px}
+.meta-pill{background:var(--rbg);color:var(--rt);font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid rgba(220,38,38,.2)}
+.live-pill{background:var(--gbg);color:var(--gt);font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid rgba(22,163,74,.25);display:flex;align-items:center;gap:5px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.btn-refresh{padding:5px 12px;font-size:12px;font-weight:500;border-radius:var(--rsm);border:1px solid var(--brdm);background:var(--sur);color:var(--t2);cursor:pointer;font-family:inherit;transition:all .13s}
+.btn-refresh:hover{background:var(--bg)}
+.btn-refresh:disabled{opacity:.5;cursor:not-allowed}
+.upd{font-size:11px;color:var(--t3);font-family:'DM Mono',monospace}
+main{max-width:1380px;margin:0 auto;padding:22px 24px}
+.sec{margin-bottom:26px}
+.sec-lbl{font-size:11px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:11px;display:flex;align-items:center;gap:7px}
+.sec-lbl small{color:var(--t3);font-weight:400;font-size:10px;text-transform:none;letter-spacing:0}
+
+/* Loading */
+.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;gap:16px}
+.spinner{width:36px;height:36px;border:3px solid var(--tlt);border-top-color:var(--teal);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:13px;color:var(--t2)}
+.progress-bar-wrap{width:260px;height:4px;background:var(--bg);border-radius:2px;overflow:hidden}
+.progress-bar-fill{height:4px;background:var(--teal);border-radius:2px;transition:width .3s}
+.error-wrap{background:var(--rbg);border:1px solid rgba(220,38,38,.2);border-radius:var(--r);padding:20px 24px;text-align:center}
+.error-wrap h3{color:var(--red);font-size:15px;margin-bottom:8px}
+.error-wrap p{color:var(--t2);font-size:13px;line-height:1.6}
+
+/* KPI */
+.kpi-row{display:grid;grid-template-columns:1.6fr repeat(5,1fr);gap:9px}
+.kpi{background:var(--sur);border:1px solid var(--brd);border-radius:var(--r);padding:14px 16px;box-shadow:var(--sh)}
+.kpi.hero{background:var(--txt);color:#fff}
+.kpi-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;opacity:.55;margin-bottom:4px}
+.kpi-value{font-size:26px;font-weight:600;line-height:1;letter-spacing:-.5px}
+.kpi-sub{font-size:10px;margin-top:4px;opacity:.5}
+.kpi.hero .kpi-label,.kpi.hero .kpi-sub{color:#fff}
+
+/* Funnel */
+.funnel{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--brdm);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+.ph-col{background:var(--sur);padding:14px 13px;border-right:1px solid var(--brd)}
+.ph-col:last-child{border-right:none}
+.ph-name{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;margin-bottom:2px}
+.ph-range{font-size:9px;color:var(--t3);margin-bottom:4px}
+.ph-tasks{font-size:9px;color:var(--t2);font-style:italic;margin-bottom:10px;line-height:1.4}
+.ph-count{font-size:28px;font-weight:700;line-height:1;margin-bottom:8px}
+.ph-sub{display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap}
+.ph-items{display:flex;flex-direction:column;gap:2px}
+.ph-item{font-size:10px;padding:3px 6px;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+.ph-more{font-size:10px;color:var(--t3);padding:2px 6px;font-style:italic}
+.ph-loading{font-size:10px;color:var(--t3);font-style:italic;padding:4px 0}
+
+/* Badge */
+.badge{display:inline-flex;align-items:center;padding:2px 7px;border-radius:20px;font-size:10px;font-weight:600;white-space:nowrap}
+.b-red{background:var(--rbg);color:var(--rt)}
+.b-ora{background:var(--obg);color:var(--ot)}
+.b-amb{background:var(--abg);color:var(--at)}
+.b-grn{background:var(--gbg);color:var(--gt)}
+.b-blu{background:var(--bbg);color:var(--bt)}
+.b-pur{background:var(--pbg);color:var(--pt)}
+.b-pau{background:#F1EFE8;color:#444441}
+
+/* Tab */
+.tab-bar{display:flex;gap:4px;margin-bottom:11px;flex-wrap:wrap;align-items:center}
+.tab{padding:5px 12px;font-size:11px;font-weight:500;border-radius:var(--rsm);border:1px solid var(--brdm);background:var(--sur);color:var(--t2);cursor:pointer;font-family:inherit;transition:all .13s}
+.tab:hover{background:var(--bg)}
+.tab.active{background:var(--txt);color:#fff;border-color:var(--txt)}
+.tab-count{font-size:10px;background:var(--bg);color:var(--t2);padding:0 5px;border-radius:9px;margin-left:3px}
+.tab.active .tab-count{background:rgba(255,255,255,.2);color:#fff}
+
+/* Table */
+.tbl-card{background:var(--sur);border:1px solid var(--brd);border-radius:var(--r);box-shadow:var(--sh);overflow:hidden}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:var(--bg);padding:8px 12px;text-align:left;font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--brdm);white-space:nowrap}
+tbody td{padding:8px 12px;border-bottom:1px solid var(--brd);vertical-align:middle}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:#FAFAF8}
+.td-name{font-weight:500}
+.td-m{color:var(--t2)}
+.td-mono{font-family:'DM Mono',monospace;font-size:11px}
+
+/* Progress */
+.prog-wrap{display:flex;align-items:center;gap:7px}
+.prog-track{flex:1;height:6px;background:var(--bg);border-radius:3px;overflow:hidden;min-width:60px}
+.prog-fill{height:6px;border-radius:3px;transition:width .4s}
+.prog-lbl{font-family:'DM Mono',monospace;font-size:10px;font-weight:600;min-width:34px;text-align:right}
+
+/* Analyst */
+.a-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:9px}
+.a-card{background:var(--sur);border:1px solid var(--brd);border-radius:var(--r);padding:13px 14px;box-shadow:var(--sh)}
+.a-hd{display:flex;align-items:center;gap:9px;margin-bottom:11px}
+.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.a-name{font-size:12px;font-weight:600}
+.a-sub{font-size:10px;color:var(--t3)}
+.a-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:9px;text-align:center}
+.sv{font-size:15px;font-weight:700}
+.sl{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.03em}
+.a-bar-wrap{height:4px;background:var(--bg);border-radius:2px;overflow:hidden;margin-bottom:3px}
+.a-bar{height:4px;border-radius:2px;transition:width .4s}
+.a-bar-lbl{display:flex;justify-content:space-between;font-size:9px;color:var(--t3)}
+
+/* Phase mini bar */
+.phase-progress{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.pp-row{display:flex;align-items:center;gap:5px;font-size:9px}
+.pp-label{color:var(--t3);width:60px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp-track{flex:1;height:3px;background:var(--bg);border-radius:2px;overflow:hidden}
+.pp-fill{height:3px;border-radius:2px}
+.pp-pct{color:var(--t2);min-width:24px;text-align:right;font-family:'DM Mono',monospace}
+
+footer{text-align:center;padding:22px 0 30px;font-size:11px;color:var(--t3);font-family:'DM Mono',monospace}
+
+@media(max-width:1100px){.kpi-row{grid-template-columns:1fr 1fr 1fr}.funnel{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.kpi-row{grid-template-columns:1fr 1fr};main{padding:14px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">
+    <span class="logo-badge">SULTS</span>
+    <span class="logo-title">Dashboard de Implantações</span>
+  </div>
+  <div class="hdr-r">
+    <div class="live-pill"><span class="live-dot"></span>Dados em tempo real</div>
+    <div class="meta-pill">⏱ Meta: 8 meses</div>
+    <button class="btn-refresh" id="btn-refresh" onclick="init()">↻ Atualizar</button>
+    <div class="upd" id="upd">–</div>
+  </div>
+</header>
+
+<main id="main">
+  <div class="loading-wrap" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Conectando à API do Sults…</div>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="prog-bar" style="width:0%"></div></div>
+  </div>
+</main>
+
+<footer>Dashboard ao vivo · API Sults v1 · Meta oficial: <strong>8 meses / 243 dias</strong></footer>
+
+<script>
+const API_KEY = 'O2Zhc3R0ZW5uaXM7MTcwNTAwMTQ3NjI1Mg==';
+const BASE    = 'https://api.sults.com.br/api/v1';
+const META    = 243;
+const TODAY   = new Date();
+const TS      = TODAY.toISOString().slice(0,10);
+const FMT     = new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+const FMTL    = new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+// Situação: 1=Concluído 2=Aberto 3=Em Andamento 4=Aguardando Predecessora 5=Definir
+const SIT_DONE = 1;
+
+// Fases do usuário
+const USER_PHASES = [
+  {id:1,l:'Busca de Ponto',         s:'F03–F04',tasks:'Pesquisa, aprovação GeoMarketing e Comitê',c:'#2563EB',bg:'#EFF6FF'},
+  {id:2,l:'Negociação e Contratos', s:'F05',    tasks:'Assinatura locação, CNPJ, contabilidade',  c:'#7C3AED',bg:'#F5F3FF'},
+  {id:3,l:'Planejamento e Projetos',s:'F06',    tasks:'Arquitetura, projeto executivo, alvará',    c:'#D97706',bg:'#FFFBEB'},
+  {id:4,l:'Execução de Obra',       s:'F07–F09',tasks:'Obra civil, quadra, instalações',           c:'#EA580C',bg:'#FFF7ED'},
+  {id:5,l:'Reta Final',             s:'F10–F17',tasks:'Mobiliários, RH, marketing, inauguração',   c:'#DC2626',bg:'#FEF2F2'},
+];
+
+// Mapeamento fase Sults → fase usuário
+function mapPhase(codigo) {
+  if(!codigo) return null;
+  const n = parseInt(codigo.replace(/\D/g,''));
+  if(n<=2)  return null; // pré-implantação
+  if(n<=4)  return 1;
+  if(n===5) return 2;
+  if(n===6) return 3;
+  if(n<=9)  return 4;
+  return 5;
+}
+
+function days(a) {
+  return Math.round((TODAY - new Date(a)) / 864e5);
+}
+function mStr(d){ return (d/30.4).toFixed(1)+'m' }
+function fn(n){ return n ? n.split(' ')[0] : '—' }
+function ini(n){ if(!n)return'?'; const p=n.split(' '); return(p[0][0]+(p[1]?p[1][0]:'')).toUpperCase() }
+function fmt(d){ if(!d)return'—'; const dt=new Date(d); return FMT.format(dt) }
+function barColor(pct){ return pct>100?'#DC2626':pct>82?'#EA580C':pct>60?'#D97706':'#16A34A' }
+function metaSt(dtI){
+  const d=days(dtI);
+  if(d>META) return{l:`Estourou — ${mStr(d)}`,cls:'b-red'};
+  if(d>META*.82) return{l:`Em risco — ${mStr(d)}`,cls:'b-ora'};
+  return {l:`No prazo — ${mStr(d)}`,cls:'b-grn'};
+}
+
+async function apiFetch(url) {
+  const r = await fetch(BASE+url, {
+    headers:{'Authorization':API_KEY,'Content-Type':'application/json;charset=UTF-8'}
+  });
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+async function fetchAllProjects() {
+  let all=[], page=0;
+  while(true){
+    const d = await apiFetch(`/implantacao/projeto?start=${page}&limit=100`);
+    all = all.concat(d.data||[]);
+    if(page+1 >= (d.totalPage||1) || (d.data||[]).length===0) break;
+    page++;
+  }
+  return all;
+}
+
+async function fetchAllTasks(projId) {
+  let all=[], page=0;
+  while(true){
+    const d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=100`);
+    all = all.concat(d.data||[]);
+    if(page+1 >= (d.totalPage||1) || (d.data||[]).length===0) break;
+    page++;
+  }
+  return all;
+}
+
+// Determina fase atual: fase com menor número com tarefas não concluídas
+function getCurrentPhase(tasks) {
+  const phases = {};
+  tasks.forEach(t => {
+    const cod = t.fase?.codigo;
+    if(!cod) return;
+    if(!phases[cod]) phases[cod] = {total:0,done:0,cod};
+    phases[cod].total++;
+    if(t.situacao===SIT_DONE) phases[cod].done++;
+  });
+  // Encontra primeira fase incompleta
+  const sorted = Object.values(phases).sort((a,b)=>{
+    const na=parseInt(a.cod.replace(/\D/g,'')),nb=parseInt(b.cod.replace(/\D/g,''));
+    return na-nb;
+  });
+  for(const ph of sorted){
+    if(ph.done < ph.total) return ph.cod;
+  }
+  return sorted[sorted.length-1]?.cod || null;
+}
+
+// Progresso real por fase usuário
+function calcProgress(tasks) {
+  const byUserPhase = {};
+  USER_PHASES.forEach(p => { byUserPhase[p.id]={total:0,done:0} });
+
+  tasks.forEach(t => {
+    const cod = t.fase?.codigo;
+    const uid = mapPhase(cod);
+    if(!uid) return;
+    byUserPhase[uid].total++;
+    if(t.situacao===SIT_DONE) byUserPhase[uid].done++;
+  });
+
+  const totalAll = tasks.length;
+  const doneAll  = tasks.filter(t=>t.situacao===SIT_DONE).length;
+  const pct      = totalAll ? Math.round(doneAll/totalAll*100) : 0;
+
+  return {byUserPhase, totalAll, doneAll, pct};
+}
+
+// Analistas conhecidos
+const ANALYSTS = [
+  {n:'Eduarda Charles Melo',       av:'#DBEAFE',tc:'#1D4ED8'},
+  {n:'André Dias Rabello',         av:'#D1FAE5',tc:'#065F46'},
+  {n:'Natalia Cristiane Amorim de Oliveira',av:'#FEF3C7',tc:'#92400E'},
+  {n:'Juliana Oliveira',           av:'#FCE7F3',tc:'#9D174D'},
+  {n:'Daniel Rocha',               av:'#FFE4E6',tc:'#9F1239'},
+  {n:'Felipe Ferreira de Souza',   av:'#F3F4F6',tc:'#374151'},
+];
+
+let PROJS_ENRICHED = [];
+let TASKS_LOADED   = {};
+
+function setProgress(pct, text) {
+  document.getElementById('prog-bar').style.width = pct+'%';
+  if(text) document.getElementById('loading-text').textContent = text;
+}
+
+async function init() {
+  const btn = document.getElementById('btn-refresh');
+  btn.disabled = true;
+
+  const main = document.getElementById('main');
+  main.innerHTML = `<div class="loading-wrap" id="loading">
+    <div class="spinner"></div>
+    <div class="loading-text" id="loading-text">Conectando à API do Sults…</div>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="prog-bar" style="width:5%"></div></div>
+  </div>`;
+
+  try {
+    // 1. Buscar projetos
+    setProgress(10, 'Buscando todos os projetos…');
+    const rawProjs = await fetchAllProjects();
+    setProgress(30, `${rawProjs.length} projetos encontrados. Processando…`);
+
+    // Enriquecer projetos
+    PROJS_ENRICHED = rawProjs.map(p => ({
+      id:       p.id,
+      nome:     p.nome,
+      ativo:    p.ativo,
+      pausado:  p.pausado,
+      concluido:p.concluido,
+      resp:     p.responsavel?.nome || '—',
+      unidade:  p.unidade?.nomeFantasia || '—',
+      dtI:      p.dtInicio?.slice(0,10),
+      dtF:      p.dtFimPlanejamento?.slice(0,10) || p.dtFim?.slice(0,10),
+      dtC:      p.dtConclusao?.slice(0,10),
+      modelo:   p.modelo?.nome || '—',
+      status:   p.concluido?'concluido':p.pausado?'pausado':p.ativo?'em_andamento':'inativo',
+      dur:      p.dtInicio ? days(p.dtInicio.slice(0,10)) : 0,
+      meta:     p.dtInicio ? metaSt(p.dtInicio.slice(0,10)) : {l:'—',cls:'b-pau'},
+      // Tasks loaded later
+      tasksLoaded: false,
+      currentPhaseCod: null,
+      currentPhaseUID: null,
+      progPct: null,
+      progData: null,
+    }));
+
+    // Render com dados de projetos (sem tarefas ainda)
+    renderDashboard(false);
+    setProgress(40, 'Carregando tarefas dos projetos ativos…');
+
+    // 2. Buscar tarefas dos projetos ativos + pausados (não concluídos)
+    const active = PROJS_ENRICHED.filter(p => p.status==='em_andamento' || p.status==='pausado');
+    const total  = active.length;
+    let loaded   = 0;
+
+    // Paralelismo controlado: 4 por vez
+    const BATCH = 4;
+    for(let i=0; i<active.length; i+=BATCH){
+      const batch = active.slice(i, i+BATCH);
+      await Promise.all(batch.map(async p => {
+        try {
+          const tasks = await fetchAllTasks(p.id);
+          TASKS_LOADED[p.id] = tasks;
+          const cod = getCurrentPhase(tasks);
+          p.currentPhaseCod = cod;
+          p.currentPhaseUID = mapPhase(cod);
+          p.progData  = calcProgress(tasks);
+          p.progPct   = p.progData.pct;
+          p.tasksLoaded = true;
+        } catch(e) {
+          p.tasksLoaded = true;
+          p.progPct = null;
+        }
+        loaded++;
+        const pct = 40 + Math.round(loaded/total*55);
+        setProgress(pct, `Tarefas: ${loaded}/${total} projetos processados…`);
+      }));
+      // Re-render parcial a cada batch
+      if(i+BATCH < active.length) renderDashboard(false);
+    }
+
+    setProgress(100, 'Concluído!');
+    renderDashboard(true);
+    document.getElementById('upd').textContent = FMTL.format(new Date());
+
+  } catch(err) {
+    document.getElementById('main').innerHTML = `
+      <div class="error-wrap">
+        <h3>Erro ao conectar com a API do Sults</h3>
+        <p>Verifique se o CORS está habilitado na API ou acesse via servidor.<br>
+        Detalhes: <code>${err.message}</code></p>
+        <button class="btn-refresh" onclick="init()" style="margin-top:12px">Tentar novamente</button>
+      </div>`;
+  }
+  btn.disabled = false;
+}
+
+function renderDashboard(full) {
+  const all     = PROJS_ENRICHED;
+  const ativos  = all.filter(p=>p.status==='em_andamento');
+  const pausados= all.filter(p=>p.status==='pausado');
+  const concs   = all.filter(p=>p.status==='concluido');
+  const monit   = [...ativos,...pausados];
+
+  const est = monit.filter(p=>p.dur>META).length;
+  const rsc = monit.filter(p=>p.dur>META*.82&&p.dur<=META).length;
+  const ok  = monit.filter(p=>p.dur<=META*.82).length;
+
+  // Funil
+  const phMap={};
+  USER_PHASES.forEach(ph=>{phMap[ph.id]=[]});
+  monit.forEach(p=>{
+    const uid = p.currentPhaseUID || (p.dur<META*.3?1:p.dur<META*.55?2:p.dur<META*.75?3:p.dur<META?4:5);
+    if(phMap[uid]) phMap[uid].push(p);
+  });
+
+  // Analistas
+  const aMap={};
+  ANALYSTS.forEach(a=>{aMap[a.n]={...a,tot:0,est:0,rsc:0,ok:0,pau:0}});
+  all.filter(p=>p.status!=='concluido').forEach(p=>{
+    const a=aMap[p.resp];
+    if(!a) return;
+    a.tot++;
+    if(p.status==='pausado') a.pau++;
+    if(p.dur>META) a.est++;
+    else if(p.dur>META*.82) a.rsc++;
+    else a.ok++;
+  });
+
+  // Tabs data
+  const TABS={
+    todos: monit.sort((a,b)=>b.dur-a.dur),
+    est:   monit.filter(p=>p.dur>META).sort((a,b)=>b.dur-a.dur),
+    risco: monit.filter(p=>p.dur>META*.82&&p.dur<=META).sort((a,b)=>b.dur-a.dur),
+    ok:    monit.filter(p=>p.dur<=META*.82).sort((a,b)=>b.dur-a.dur),
+    atv:   ativos.sort((a,b)=>b.dur-a.dur),
+    pau:   pausados.sort((a,b)=>b.dur-a.dur),
+  };
+
+  document.getElementById('main').innerHTML = `
+  <div class="sec">
+    <div class="sec-lbl">🎯 Meta de 8 meses — ${all.length} projetos carregados</div>
+    <div class="kpi-row" id="kpis"></div>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">📍 Projetos ativos por fase <small>· ${full?'tarefas reais':'estimativa por tempo — carregando tarefas...'}</small></div>
+    <div class="funnel" id="funnel"></div>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">📋 Classificação pela meta</div>
+    <div class="tab-bar" id="tab-bar"></div>
+    <div class="tbl-card"><div class="tbl-wrap">
+      <table><thead><tr>
+        <th>Projeto</th><th>Status</th><th>Analista</th><th>Fase atual</th>
+        <th>Modelo</th><th>Início</th><th>Duração</th>
+        ${full?'<th>Progresso real</th>':''}
+        <th>Progresso meta</th><th>Classificação</th>
+      </tr></thead><tbody id="tbody"></tbody></table>
+    </div></div>
+  </div>
+  <div class="sec">
+    <div class="sec-lbl">👤 Analistas — desempenho contra a meta</div>
+    <div class="a-grid" id="agrid"></div>
+  </div>`;
+
+  // KPIs
+  document.getElementById('kpis').innerHTML=[
+    {l:'Meta',v:'8 meses',s:'243 dias por unidade',c:'',hero:true},
+    {l:'Total projetos',v:all.length,s:`${ativos.length} ativos · ${pausados.length} pausados · ${concs.length} concluídos`,c:'var(--txt)'},
+    {l:'Estourou a meta',v:est,s:'projetos ativos acima de 8m',c:'#DC2626'},
+    {l:'Em risco',v:rsc,s:'entre 6,7 e 8 meses',c:'#EA580C'},
+    {l:'No prazo',v:ok,s:'abaixo de 6,7 meses',c:'#16A34A'},
+    {l:'Monitorados',v:monit.length,s:'em andamento + pausados',c:'var(--txt)'},
+  ].map(k=>`<div class="kpi${k.hero?' hero':''}">
+    <div class="kpi-label">${k.l}</div>
+    <div class="kpi-value"${k.c?` style="color:${k.c}"`:''}>${k.v}</div>
+    <div class="kpi-sub">${k.s}</div>
+  </div>`).join('');
+
+  // Funnel
+  document.getElementById('funnel').innerHTML=USER_PHASES.map(ph=>{
+    const items=phMap[ph.id]||[];
+    const nAtv=items.filter(x=>x.status==='em_andamento').length;
+    const nPau=items.filter(x=>x.status==='pausado').length;
+    return`<div class="ph-col" style="border-top:3px solid ${ph.c}">
+      <div class="ph-name"><span style="width:8px;height:8px;border-radius:50%;background:${ph.c};display:inline-block;flex-shrink:0"></span><span style="color:${ph.c}">${ph.l}</span></div>
+      <div class="ph-range">${ph.s}</div>
+      <div class="ph-tasks">${ph.tasks}</div>
+      <div class="ph-count" style="color:${ph.c}">${items.length}</div>
+      <div class="ph-sub">
+        ${nAtv?`<span class="badge b-blu">${nAtv} ativos</span>`:''}
+        ${nPau?`<span class="badge b-pau">${nPau} pausados</span>`:''}
+      </div>
+      <div class="ph-items">
+        ${items.slice(0,5).map(p=>`<div class="ph-item" title="${p.nome} · ${fn(p.resp)}" style="background:${ph.bg};color:${ph.c}">${p.nome.replace('Fast Tennis - ','FT ').replace('Fast Tennis ','FT ')}</div>`).join('')}
+        ${items.length>5?`<div class="ph-more">+${items.length-5} projetos</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Tab bar
+  document.getElementById('tab-bar').innerHTML=[
+    {k:'todos',l:'Todos ativos'},
+    {k:'est',l:'🔴 Estourou'},
+    {k:'risco',l:'🟠 Em risco'},
+    {k:'ok',l:'🟢 No prazo'},
+    {k:'atv',l:'Em andamento'},
+    {k:'pau',l:'⏸ Pausados'},
+  ].map((t,i)=>`<button class="tab${i===0?' active':''}" onclick="setTab('${t.k}',this)">${t.l}<span class="tab-count">${TABS[t.k].length}</span></button>`).join('');
+
+  window._TABS = TABS;
+  window._FULL = full;
+  renderTable('todos');
+
+  // Analyst grid
+  document.getElementById('agrid').innerHTML=ANALYSTS.map(({n})=>{
+    const a=aMap[n]; if(!a||a.tot===0) return '';
+    const pOk=Math.round(a.ok/a.tot*100);
+    const bc=pOk>=60?'#16A34A':pOk>=40?'#D97706':'#DC2626';
+    return`<div class="a-card">
+      <div class="a-hd">
+        <div class="av" style="background:${a.av};color:${a.tc}">${ini(n)}</div>
+        <div><div class="a-name">${fn(n)}</div><div class="a-sub">${a.tot} projetos ativos</div></div>
+      </div>
+      <div class="a-stats">
+        <div><div class="sv" style="color:#DC2626">${a.est}</div><div class="sl">estourou</div></div>
+        <div><div class="sv" style="color:#EA580C">${a.rsc}</div><div class="sl">risco</div></div>
+        <div><div class="sv" style="color:#16A34A">${a.ok}</div><div class="sl">ok</div></div>
+      </div>
+      <div class="a-bar-wrap"><div class="a-bar" style="width:${pOk}%;background:${bc}"></div></div>
+      <div class="a-bar-lbl"><span>no prazo da meta</span><span style="font-weight:700;color:${bc}">${pOk}%</span></div>
+    </div>`;
+  }).join('');
+}
+
+window.setTab = function(k, btn){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable(k);
+};
+
+function renderTable(key){
+  const rows = window._TABS?.[key] || [];
+  const full = window._FULL;
+  document.getElementById('tbody').innerHTML = rows.map(p => {
+    const pct = Math.min(Math.round(p.dur/META*100),200);
+    const bc  = barColor(pct);
+    const stBadge = p.status==='pausado'?'<span class="badge b-pau">Pausado</span>':'<span class="badge b-blu">Em andamento</span>';
+    const phLabel = p.currentPhaseUID
+      ? `<span class="badge" style="background:${USER_PHASES[p.currentPhaseUID-1].bg};color:${USER_PHASES[p.currentPhaseUID-1].c}">${USER_PHASES[p.currentPhaseUID-1].l}</span>`
+      : '<span class="badge b-pau">—</span>';
+    const progReal = full && p.tasksLoaded && p.progPct!==null
+      ? `<td class="td-mono">${p.progPct}% <span style="color:var(--t3);font-size:10px">(${p.progData?.doneAll||0}/${p.progData?.totalAll||0})</span></td>`
+      : full ? `<td style="color:var(--t3);font-size:11px">—</td>` : '';
+    return `<tr>
+      <td class="td-name" style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${p.nome}">${p.nome}</td>
+      <td>${stBadge}</td>
+      <td class="td-m">${fn(p.resp)}</td>
+      <td>${phLabel}</td>
+      <td class="td-m td-mono" style="font-size:10px">${p.modelo.includes('3.0')?'3.0':'2.0'}</td>
+      <td class="td-m td-mono">${fmt(p.dtI)}</td>
+      <td class="td-mono" style="font-weight:600">${mStr(p.dur)} <span style="color:var(--t3);font-weight:400">(${p.dur}d)</span></td>
+      ${progReal}
+      <td style="min-width:130px">
+        <div class="prog-wrap">
+          <div class="prog-track"><div class="prog-fill" style="width:${Math.min(pct,100)}%;background:${bc}"></div></div>
+          <span class="prog-lbl" style="color:${bc}">${pct}%</span>
+        </div>
+      </td>
+      <td><span class="badge ${p.meta.cls}">${p.meta.l}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// Start
+init();
+</script>
+</body>
+</html>
