@@ -205,8 +205,9 @@ footer{text-align:center;padding:22px 0 30px;font-size:11px;color:var(--t3);font
 <footer>Dashboard ao vivo · API Sults v1 · Meta oficial: <strong>8 meses / 243 dias</strong></footer>
 
 <script>
-const API_KEY = 'O2Zhc3R0ZW5uaXM7MTcwNTAwMTQ3NjI1Mg==';
-const BASE    = 'https://api.sults.com.br/api/v1';
+// A API Key agora fica segura no proxy do servidor (variável de ambiente).
+// O dashboard chama /api/sults?path=... em vez da API do Sults diretamente.
+const BASE    = '/api/sults?path=';
 let TASK_LIMIT = 0; // descoberto em runtime — maior limit que a API aceita
 const META    = 243;
 const TODAY   = new Date();
@@ -265,12 +266,17 @@ function metaSt(dtI, phaseUID){
 }
 
 async function apiFetch(url, tentativa=0) {
-  const r = await fetch(BASE+url, {
-    headers:{'Authorization':API_KEY,'Content-Type':'application/json;charset=UTF-8'}
+  // url vem como "/implantacao/projeto?start=0&limit=30"
+  // Precisamos separar o path da query e montar: /api/sults?path=PATH&start=0&limit=30
+  const [path, qs] = url.split('?');
+  const proxyUrl = `${BASE}${encodeURIComponent(path)}${qs ? '&' + qs : ''}`;
+
+  const r = await fetch(proxyUrl, {
+    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
   });
   // 429 = rate limit → espera progressiva e tenta de novo (até 4x)
   if(r.status === 429 && tentativa < 4) {
-    const espera = 1000 * Math.pow(2, tentativa); // 1s, 2s, 4s, 8s
+    const espera = 1000 * Math.pow(2, tentativa);
     await new Promise(res => setTimeout(res, espera));
     return apiFetch(url, tentativa + 1);
   }
@@ -458,12 +464,17 @@ function metaSt(dtI, phaseUID){
 }
 
 async function apiFetch(url, tentativa=0) {
-  const r = await fetch(BASE+url, {
-    headers:{'Authorization':API_KEY,'Content-Type':'application/json;charset=UTF-8'}
+  // url vem como "/implantacao/projeto?start=0&limit=30"
+  // Precisamos separar o path da query e montar: /api/sults?path=PATH&start=0&limit=30
+  const [path, qs] = url.split('?');
+  const proxyUrl = `${BASE}${encodeURIComponent(path)}${qs ? '&' + qs : ''}`;
+
+  const r = await fetch(proxyUrl, {
+    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
   });
   // 429 = rate limit → espera progressiva e tenta de novo (até 4x)
   if(r.status === 429 && tentativa < 4) {
-    const espera = 1000 * Math.pow(2, tentativa); // 1s, 2s, 4s, 8s
+    const espera = 1000 * Math.pow(2, tentativa);
     await new Promise(res => setTimeout(res, espera));
     return apiFetch(url, tentativa + 1);
   }
@@ -802,20 +813,16 @@ async function init() {
     const totalCarregados = PROJS_ENRICHED.filter(p=>p.tasksLoaded).length;
     const totalAtivos2 = PROJS_ENRICHED.filter(p=>p.status==='em_andamento').length;
     const cacheInfo = window._fromCache !== null && window._fromCache !== undefined
-      ? ` · 📦 cache (${window._fromCache}min)` : ` · ⚡ API ao vivo`;
+      ? ` · 📦 cache (${window._fromCache}min)` : ` · ⚡ via proxy seguro`;
     document.getElementById('upd').textContent = FMTL.format(new Date()) + cacheInfo;
 
   } catch(err) {
     console.error('Dashboard error:', err);
-    const isCors = !err.message || err.message.includes('fetch') || err.message.includes('network') || err.message.includes('Failed') || err.name === 'TypeError';
     const main2 = document.getElementById('main');
     if(main2) main2.innerHTML = `
       <div class="error-wrap">
-        <h3>${isCors ? 'Erro de CORS — API bloqueada pelo navegador' : 'Erro ao carregar dashboard'}</h3>
-        <p>${isCors
-          ? 'O navegador bloqueou a chamada à API do Sults. Solicite ao time técnico que libere o CORS para o domínio deste dashboard.'
-          : 'Ocorreu um erro inesperado. Tente recarregar a página.'
-        }<br><br><strong>Detalhes:</strong><br>
+        <h3>Erro ao carregar dados</h3>
+        <p>Não foi possível buscar os dados via proxy. Verifique se o arquivo <code>api/sults.js</code> foi publicado e se a variável <code>SULTS_API_KEY</code> está configurada na Vercel.<br><br><strong>Detalhes:</strong><br>
         <code style="font-size:11px;word-break:break-all">${err.stack || err.message}</code></p>
         <button onclick="init()" style="margin-top:14px;padding:6px 16px;background:#009688;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px">↻ Tentar novamente</button>
       </div>`;
