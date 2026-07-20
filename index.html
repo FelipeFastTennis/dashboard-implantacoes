@@ -321,27 +321,33 @@ async function descobrirLimite(projId) {
   return 5; // fallback mínimo seguro
 }
 
-async function fetchAllTasks(projId, retries=5) {
-  // Descobrir limite na primeira chamada
+async function fetchAllTasks(projId) {
   if(TASK_LIMIT === 0) {
     TASK_LIMIT = await descobrirLimite(projId);
   }
-  let all=[], page=0;
-  try {
-    while(true){
-      const d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=${TASK_LIMIT}`);
-      all = all.concat(d.data||[]);
-      if(page+1 >= (d.totalPage||1) || (d.data||[]).length===0) break;
-      page++;
+  let all=[], page=0, totalPages=1;
+  // Busca TODAS as páginas. Se qualquer página falhar após retries, lança erro
+  // (o projeto será reprocessado inteiro depois — nunca classificado com dados parciais).
+  while(page < totalPages) {
+    let d = null, tentativas = 0;
+    while(tentativas < 6) {
+      try {
+        d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=${TASK_LIMIT}`);
+        break;
+      } catch(e) {
+        tentativas++;
+        if(tentativas >= 6) throw new Error(`Página ${page} falhou após 6 tentativas`);
+        await new Promise(r => setTimeout(r, 1000 * tentativas)); // espera crescente
+      }
     }
-    return all;
-  } catch(e) {
-    if(retries > 0) {
-      await new Promise(r => setTimeout(r, 1500));
-      return fetchAllTasks(projId, retries-1);
-    }
-    throw e;
+    all = all.concat(d.data||[]);
+    totalPages = d.totalPage || 1;
+    if((d.data||[]).length === 0) break;
+    page++;
+    // Pequena pausa entre páginas do mesmo projeto
+    if(page < totalPages) await new Promise(r => setTimeout(r, 200));
   }
+  return all;
 }
 
 // Determina fase atual: fase com menor número com tarefas não concluídas
@@ -537,27 +543,33 @@ async function descobrirLimite(projId) {
   return 5; // fallback mínimo seguro
 }
 
-async function fetchAllTasks(projId, retries=5) {
-  // Descobrir limite na primeira chamada
+async function fetchAllTasks(projId) {
   if(TASK_LIMIT === 0) {
     TASK_LIMIT = await descobrirLimite(projId);
   }
-  let all=[], page=0;
-  try {
-    while(true){
-      const d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=${TASK_LIMIT}`);
-      all = all.concat(d.data||[]);
-      if(page+1 >= (d.totalPage||1) || (d.data||[]).length===0) break;
-      page++;
+  let all=[], page=0, totalPages=1;
+  // Busca TODAS as páginas. Se qualquer página falhar após retries, lança erro
+  // (o projeto será reprocessado inteiro depois — nunca classificado com dados parciais).
+  while(page < totalPages) {
+    let d = null, tentativas = 0;
+    while(tentativas < 6) {
+      try {
+        d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=${TASK_LIMIT}`);
+        break;
+      } catch(e) {
+        tentativas++;
+        if(tentativas >= 6) throw new Error(`Página ${page} falhou após 6 tentativas`);
+        await new Promise(r => setTimeout(r, 1000 * tentativas)); // espera crescente
+      }
     }
-    return all;
-  } catch(e) {
-    if(retries > 0) {
-      await new Promise(r => setTimeout(r, 1500));
-      return fetchAllTasks(projId, retries-1);
-    }
-    throw e;
+    all = all.concat(d.data||[]);
+    totalPages = d.totalPage || 1;
+    if((d.data||[]).length === 0) break;
+    page++;
+    // Pequena pausa entre páginas do mesmo projeto
+    if(page < totalPages) await new Promise(r => setTimeout(r, 200));
   }
+  return all;
 }
 
 // Determina fase atual: fase com menor número com tarefas não concluídas
@@ -649,7 +661,7 @@ let TASKS_LOADED   = {};
 
 // ── CACHE LOCAL (localStorage) ───────────────────────────────────────────────
 const CACHE_KEY  = 'sults_tasks_v2';
-const CACHE_TTL  = 60 * 60 * 1000; // 1 hora em ms
+const CACHE_TTL  = 12 * 60 * 60 * 1000; // 12 horas em ms (alinhado ao proxy)
 
 function cacheLoad() {
   try {
@@ -780,8 +792,9 @@ async function init() {
             const tasks = await fetchAllTasks(p.id);
             applyTasks(p, tasks);
           } catch(e) {
-            console.warn(`[SULTS] Falha definitiva proj ${p.id}:`, e.message);
-            p.loadFailed = true; // marca para tentar de novo na 2a passada
+            console.warn(`[SULTS] Proj ${p.id} incompleto:`, e.message);
+            p.loadFailed = true; // será reprocessado na 2a passada
+            p.currentPhaseUID = null; // não classifica com dados parciais
             window._loadErrors = (window._loadErrors || 0) + 1;
           }
           loaded++;
@@ -801,7 +814,7 @@ async function init() {
       // ── 2ª PASSADA: reprocessar projetos que falharam (1 por vez, devagar) ──
       let falhados = active.filter(p => p.loadFailed || !p.currentPhaseUID);
       let rodada = 0;
-      while(falhados.length > 0 && rodada < 3) {
+      while(falhados.length > 0 && rodada < 6) {
         rodada++;
         setProgress(95, `Reprocessando ${falhados.length} projetos (rodada ${rodada})…`);
         const updEl0 = document.getElementById('upd');
