@@ -361,9 +361,12 @@ function getCurrentPhase(tasks) {
       porcentagem: t.porcentagemConclusao
     };
     console.log('[SULTS] Estrutura de tarefa:', JSON.stringify(info));
-    // Mostrar info na tela
+    // Contar distribuição de situacao para entender os dados
+    const sitCount = {};
+    tasks.forEach(x => { const s = x.situacao ?? 'null'; sitCount[s] = (sitCount[s]||0)+1; });
+    console.log('[SULTS] Distribuição de situacao:', JSON.stringify(sitCount));
     const el = document.getElementById('dbg-info');
-    if(el) { el.style.display='block'; el.innerHTML = '🔍 <strong>DEBUG tarefa (1a):</strong> ' + JSON.stringify(info); }
+    if(el) { el.style.display='block'; el.innerHTML = '🔍 <strong>situacao dos ' + tasks.length + ' registros:</strong> ' + JSON.stringify(sitCount) + ' — (1=Concluído 2=Aberto 3=Andamento 4=Aguardando 5=Definir)'; }
   }
 
   // Tarefas ignoradas no cálculo da fase (dependem de prazos externos
@@ -415,9 +418,10 @@ function getCurrentPhase(tasks) {
       || (t.dtFim != null && t.dtFim !== '' && new Date(t.dtFim) < new Date());
 
     const isAndamento = t.situacao === 3 || t.situacao === '3'
-      || (t.porcentagemConclusao > 0 && t.porcentagemConclusao < 100);
+      || (t.porcentagemConclusao > 0 && t.porcentagemConclusao < 100)
+      || (t.dtInicio != null && t.dtInicio !== '' && !isDone); // começou mas não terminou
 
-    // Tarefa "iniciada" = concluída OU em andamento (ignora abertas/aguardando)
+    // Tarefa "iniciada" = concluída OU em andamento (ignora abertas/aguardando/definir)
     const isIniciada = isDone || isAndamento;
 
     if(!phases[cod]) phases[cod] = {total:0, done:0, iniciadas:0, cod, n};
