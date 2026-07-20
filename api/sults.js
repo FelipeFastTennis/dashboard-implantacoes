@@ -2,8 +2,14 @@
 // Roda no servidor da Vercel (sem CORS) e repassa para o dashboard.
 // A API Key fica segura aqui, nunca exposta no navegador.
 //
-// Inclui retry automático com backoff para erros 429 (rate limit),
-// resolvido no lado do servidor onde é mais confiável.
+// CACHE DE 12 HORAS: a primeira chamada de cada projeto no período busca da
+// API do Sults e guarda o resultado no CDN da Vercel. Todas as chamadas
+// seguintes (por 12h) são servidas do cache, sem tocar a API — o que
+// praticamente elimina o erro 429 para os usuários.
+//
+// Inclui também retry automático com backoff para 429, no lado do servidor.
+
+const CACHE_SEGUNDOS = 12 * 60 * 60; // 12 horas
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -23,7 +29,6 @@ export default async function handler(req, res) {
   const params = new URLSearchParams(query).toString();
   const url = `https://api.sults.com.br/api/v1${path}${params ? '?' + params : ''}`;
 
-  // Retry com backoff exponencial para 429
   const MAX_RETRIES = 5;
   for (let tentativa = 0; tentativa <= MAX_RETRIES; tentativa++) {
     try {
@@ -34,10 +39,9 @@ export default async function handler(req, res) {
         }
       });
 
-      // 429 = rate limit → espera e tenta de novo
       if (apiRes.status === 429) {
         if (tentativa < MAX_RETRIES) {
-          const espera = 500 * Math.pow(2, tentativa); // 0.5s, 1s, 2s, 4s, 8s
+          const espera = 500 * Math.pow(2, tentativa);
           await new Promise(r => setTimeout(r, espera));
           continue;
         }
@@ -52,8 +56,14 @@ export default async function handler(req, res) {
       }
 
       const data = await apiRes.json();
-      // Cache no CDN da Vercel: 5 min. Chamadas repetidas nem tocam a API do Sults.
-      res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
+
+      // CACHE DE 12 HORAS no CDN da Vercel.
+      // s-maxage = quanto tempo o CDN serve a resposta em cache sem ir à origem.
+      // stale-while-revalidate = serve o cache antigo enquanto atualiza em background.
+      res.setHeader(
+        'Cache-Control',
+        `s-maxage=${CACHE_SEGUNDOS}, stale-while-revalidate=${CACHE_SEGUNDOS}`
+      );
       return res.status(200).json(data);
 
     } catch (err) {
