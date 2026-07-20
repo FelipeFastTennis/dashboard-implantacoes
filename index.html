@@ -248,21 +248,24 @@ function fn(n){ return n ? n.split(' ')[0] : '—' }
 function ini(n){ if(!n)return'?'; const p=n.split(' '); return(p[0][0]+(p[1]?p[1][0]:'')).toUpperCase() }
 function fmt(d){ if(!d)return'—'; const dt=new Date(d); return FMT.format(dt) }
 function barColor(pct){ return pct>100?'#DC2626':pct>82?'#EA580C':pct>60?'#D97706':'#16A34A' }
-function metaSt(dtI, phaseUID){
+function metaSt(dtI, phaseUID, durTotal){
   const d = days(dtI);
+  // Tempo de referência para a meta: usa o tempo TOTAL previsto se disponível,
+  // senão o tempo já decorrido
+  const dRef = (durTotal != null && durTotal > 0) ? durTotal : d;
 
-  // 1. Estourou meta de 8 meses
-  if(d > META) return { l:'Estourou — '+mStr(d), cls:'b-red' };
+  // 1. Tempo total previsto estoura a meta de 8 meses
+  if(dRef > META) return { l:'Estourou — '+mStr(dRef)+' previstos', cls:'b-red' };
 
-  // 2. Ponto não definido após 40 dias
+  // 2. Ponto não definido após 40 dias (usa tempo decorrido real)
   if(phaseUID === 1 && d > 40)
     return { l:'Em risco — ponto não definido ('+d+'d)', cls:'b-ora' };
 
-  // 3. Acima de 5 meses e ainda não está em Obra ou Reta Final
+  // 3. Acima de 5 meses decorridos e ainda não está em Obra ou Reta Final
   if(phaseUID !== null && phaseUID < 4 && d > 150)
     return { l:'Em risco — '+mStr(d)+' sem iniciar obra', cls:'b-ora' };
 
-  return { l:'No prazo — '+mStr(d), cls:'b-grn' };
+  return { l:'No prazo — '+mStr(dRef), cls:'b-grn' };
 }
 
 async function apiFetch(url, tentativa=0) {
@@ -405,24 +408,35 @@ function getCurrentPhase(tasks) {
     const n = parseInt(cod.replace(/\D/g,''));
     if(n === 5) return; // F05 ignorada
 
-    // Determinar conclusão
+    // Situação: 1=Concluído · 2=Aberto · 3=Em Andamento · 4=Aguardando · 5=Definir
     const isDone = t.situacao === 1 || t.situacao === '1'
       || t.porcentagemConclusao === 100 || t.porcentagemConclusao === '100'
       || (t.dtConclusao != null && t.dtConclusao !== '')
       || (t.dtFim != null && t.dtFim !== '' && new Date(t.dtFim) < new Date());
 
-    if(!phases[cod]) phases[cod] = {total:0, done:0, cod, n};
+    const isAndamento = t.situacao === 3 || t.situacao === '3'
+      || (t.porcentagemConclusao > 0 && t.porcentagemConclusao < 100);
+
+    // Tarefa "iniciada" = concluída OU em andamento (ignora abertas/aguardando)
+    const isIniciada = isDone || isAndamento;
+
+    if(!phases[cod]) phases[cod] = {total:0, done:0, iniciadas:0, cod, n};
     phases[cod].total++;
     if(isDone) phases[cod].done++;
+    if(isIniciada) phases[cod].iniciadas++;
   });
 
   const sorted = Object.values(phases).sort((a,b) => a.n - b.n);
   if(!sorted.length) return null;
 
-  for(const ph of sorted) {
-    if(ph.done < ph.total) return ph.cod;
-  }
-  return sorted[sorted.length-1].cod;
+  // REGRA: a fase atual é a MAIS AVANÇADA (maior número) que já tenha pelo menos
+  // uma tarefa concluída ou em andamento. Tarefas apenas "abertas" ou "aguardando"
+  // numa fase anterior não seguram o projeto lá.
+  const iniciadas = sorted.filter(ph => ph.iniciadas > 0);
+  if(iniciadas.length === 0) return sorted[0].cod; // nada iniciado → 1ª fase presente
+
+  // A mais avançada com trabalho iniciado é a fase atual do projeto
+  return iniciadas[iniciadas.length - 1].cod;
 }
 
 
@@ -446,21 +460,24 @@ function fn(n){ return n ? n.split(' ')[0] : '—' }
 function ini(n){ if(!n)return'?'; const p=n.split(' '); return(p[0][0]+(p[1]?p[1][0]:'')).toUpperCase() }
 function fmt(d){ if(!d)return'—'; const dt=new Date(d); return FMT.format(dt) }
 function barColor(pct){ return pct>100?'#DC2626':pct>82?'#EA580C':pct>60?'#D97706':'#16A34A' }
-function metaSt(dtI, phaseUID){
+function metaSt(dtI, phaseUID, durTotal){
   const d = days(dtI);
+  // Tempo de referência para a meta: usa o tempo TOTAL previsto se disponível,
+  // senão o tempo já decorrido
+  const dRef = (durTotal != null && durTotal > 0) ? durTotal : d;
 
-  // 1. Estourou meta de 8 meses
-  if(d > META) return { l:'Estourou — '+mStr(d), cls:'b-red' };
+  // 1. Tempo total previsto estoura a meta de 8 meses
+  if(dRef > META) return { l:'Estourou — '+mStr(dRef)+' previstos', cls:'b-red' };
 
-  // 2. Ponto não definido após 40 dias
+  // 2. Ponto não definido após 40 dias (usa tempo decorrido real)
   if(phaseUID === 1 && d > 40)
     return { l:'Em risco — ponto não definido ('+d+'d)', cls:'b-ora' };
 
-  // 3. Acima de 5 meses e ainda não está em Obra ou Reta Final
+  // 3. Acima de 5 meses decorridos e ainda não está em Obra ou Reta Final
   if(phaseUID !== null && phaseUID < 4 && d > 150)
     return { l:'Em risco — '+mStr(d)+' sem iniciar obra', cls:'b-ora' };
 
-  return { l:'No prazo — '+mStr(d), cls:'b-grn' };
+  return { l:'No prazo — '+mStr(dRef), cls:'b-grn' };
 }
 
 async function apiFetch(url, tentativa=0) {
@@ -705,7 +722,10 @@ async function init() {
       modelo:   p.modelo?.nome || '—',
       status:   p.concluido?'concluido':p.pausado?'pausado':p.ativo?'em_andamento':'inativo',
       dur:      p.dtInicio ? days(p.dtInicio.slice(0,10)) : 0,
-      meta:     p.dtInicio ? metaSt(p.dtInicio.slice(0,10), null) : {l:'—',cls:'b-pau'},
+      durTotal: (p.dtInicio && (p.dtFim||p.dtFimPlanejamento))
+                  ? Math.round((new Date((p.dtFim||p.dtFimPlanejamento).slice(0,10)) - new Date(p.dtInicio.slice(0,10)))/864e5)
+                  : null,
+      meta:     p.dtInicio ? metaSt(p.dtInicio.slice(0,10), null, null) : {l:'—',cls:'b-pau'},
       // Tasks loaded later
       tasksLoaded: false,
       currentPhaseCod: null,
@@ -734,7 +754,7 @@ async function init() {
       }
       p.tasksLoaded = true;
       // Sem estimativa por tempo — a fase vem APENAS das tarefas reais
-      if(p.dtI) p.meta = metaSt(p.dtI, p.currentPhaseUID);
+      if(p.dtI) p.meta = metaSt(p.dtI, p.currentPhaseUID, p.durTotal);
     }
 
     if(cached) {
@@ -900,8 +920,8 @@ function renderDashboard(full) {
     <div class="tab-bar" id="tab-bar"></div>
     <div class="tbl-card"><div class="tbl-wrap">
       <table><thead><tr>
-        <th>Projeto</th><th>Status</th><th>Analista</th><th>Fase atual</th>
-        <th>Modelo</th><th>Início</th><th>Duração</th>
+        <th>Projeto</th><th>Analista</th><th>Fase atual</th>
+        <th>Início</th><th>Duração atual</th><th>Previsão término</th><th>Tempo total previsto</th>
         ${full?'<th>Progresso real</th>':''}
         <th>Progresso meta</th><th>Classificação</th>
       </tr></thead><tbody id="tbody"></tbody></table>
@@ -1078,7 +1098,6 @@ function renderTable(key){
   tbody.innerHTML = rows.map(p => {
     const pct = Math.min(Math.round(p.dur/META*100),200);
     const bc  = barColor(pct);
-    const stBadge = p.status==='pausado'?'<span class="badge b-pau">Pausado</span>':'<span class="badge b-blu">Em andamento</span>';
     const phLabel = p.currentPhaseUID
       ? `<span class="badge" style="background:${USER_PHASES[p.currentPhaseUID-1].bg};color:${USER_PHASES[p.currentPhaseUID-1].c}">${USER_PHASES[p.currentPhaseUID-1].l}</span>`
       : '<span class="badge" style="background:#F1EFE8;color:#9E9E9E">⟳ carregando…</span>';
@@ -1087,12 +1106,12 @@ function renderTable(key){
       : full ? `<td style="color:var(--t3);font-size:11px">—</td>` : '';
     return `<tr>
       <td class="td-name" style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${p.nome}">${p.nome}</td>
-      <td>${stBadge}</td>
       <td class="td-m">${fn(p.resp)}</td>
       <td>${phLabel}</td>
-      <td class="td-m td-mono" style="font-size:10px">${p.modelo.includes('3.0')?'3.0':'2.0'}</td>
       <td class="td-m td-mono">${fmt(p.dtI)}</td>
       <td class="td-mono" style="font-weight:600">${mStr(p.dur)} <span style="color:var(--t3);font-weight:400">(${p.dur}d)</span></td>
+      <td class="td-m td-mono">${p.dtF?fmt(p.dtF):'—'}</td>
+      <td class="td-mono" style="font-weight:600">${p.durTotal!=null?mStr(p.durTotal)+' <span style=\'color:var(--t3);font-weight:400\'>('+p.durTotal+'d)</span>':'<span style=\'color:var(--t3)\'>—</span>'}</td>
       ${progReal}
       <td style="min-width:130px">
         <div class="prog-wrap">
@@ -1127,7 +1146,8 @@ window.togglePhase = function(phId) {
   cols.forEach(c=>c.classList.toggle('active', parseInt(c.dataset.ph)===phId));
 
   const rows = [...items].sort((a,b)=>b.dur-a.dur).map(p=>{
-    const desvio  = p.dur - META;
+    const refDur  = (p.durTotal != null && p.durTotal > 0) ? p.durTotal : p.dur;
+    const desvio  = refDur - META;
     const desvioM = Math.abs(desvio/30.4).toFixed(1);
     const desvioLabel = desvio > 0
       ? `<span class="desvio-pos">+${desvioM}m (+${desvio}d)</span>`
