@@ -418,17 +418,13 @@ function getCurrentPhase(tasks) {
     if(n === 5) return; // F05 ignorada
 
     // Situação: 1=Concluído · 2=Aberto · 3=Em Andamento · 4=Aguardando · 5=Definir
-    const isDone = t.situacao === 1 || t.situacao === '1'
-      || t.porcentagemConclusao === 100 || t.porcentagemConclusao === '100'
-      || (t.dtConclusao != null && t.dtConclusao !== '')
-      || (t.dtFim != null && t.dtFim !== '' && new Date(t.dtFim) < new Date());
-
-    const isAndamento = t.situacao === 3 || t.situacao === '3'
-      || (t.porcentagemConclusao > 0 && t.porcentagemConclusao < 100)
-      || (t.dtInicio != null && t.dtInicio !== '' && !isDone); // começou mas não terminou
-
-    // Tarefa "iniciada" = concluída OU em andamento (ignora abertas/aguardando/definir)
-    const isIniciada = isDone || isAndamento;
+    // O campo "situacao" é a fonte confiável. A dtConclusao da API mistura
+    // data planejada com data real, então NÃO serve para inferir conclusão.
+    const sit = Number(t.situacao);
+    const isDone      = sit === 1;
+    const isAndamento = sit === 3;
+    // "Iniciada" = concluída OU em andamento. Aberta(2), Aguardando(4), Definir(5) não contam.
+    const isIniciada  = isDone || isAndamento;
 
     if(!phases[cod]) phases[cod] = {total:0, done:0, iniciadas:0, cod, n};
     phases[cod].total++;
@@ -638,11 +634,11 @@ function calcProgress(tasks) {
     const uid = mapPhase(cod);
     if(!uid) return;
     byUserPhase[uid].total++;
-    if(t.situacao===SIT_DONE) byUserPhase[uid].done++;
+    if(Number(t.situacao)===SIT_DONE) byUserPhase[uid].done++;
   });
 
   const totalAll = tasks.length;
-  const doneAll  = tasks.filter(t=>t.situacao===SIT_DONE).length;
+  const doneAll  = tasks.filter(t=>Number(t.situacao)===SIT_DONE).length;
   const pct      = totalAll ? Math.round(doneAll/totalAll*100) : 0;
 
   return {byUserPhase, totalAll, doneAll, pct};
@@ -667,25 +663,37 @@ function cacheLoad() {
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if(!raw) return null;
-    const { tasks, timestamp } = JSON.parse(raw);
+    const { resumo, timestamp } = JSON.parse(raw);
     const age = Date.now() - timestamp;
     if(age > CACHE_TTL) return null;
-    // Validar: cache precisa ter pelo menos 50% dos projetos com tarefas reais
-    const entries = Object.values(tasks || {});
-    const comTarefas = entries.filter(t => t && t.length > 0).length;
-    if(entries.length === 0 || comTarefas / entries.length < 0.3) {
-      console.warn('Cache inválido — dados insuficientes, descartando');
+    const entries = Object.values(resumo || {});
+    if(entries.length === 0) {
       localStorage.removeItem(CACHE_KEY);
       return null;
     }
-    return { tasks, age: Math.round(age/60000) };
+    return { resumo, age: Math.round(age/60000) };
   } catch(e) { return null; }
 }
 
-function cacheSave(tasksMap) {
+function cacheSave(projsEnriched) {
   try {
+    // Guarda APENAS o resumo leve por projeto (não as tarefas completas,
+    // que estourariam o limite de 5MB do localStorage). Os dados brutos já
+    // ficam no cache de 12h do proxy no servidor.
+    const resumo = {};
+    projsEnriched.forEach(p => {
+      if(p.tasksLoaded && p.currentPhaseUID) {
+        resumo[p.id] = {
+          fase: p.currentPhaseUID,
+          cod:  p.currentPhaseCod,
+          pct:  p.progPct,
+          done: p.progData?.doneAll || 0,
+          tot:  p.progData?.totalAll || 0
+        };
+      }
+    });
     localStorage.setItem(CACHE_KEY, JSON.stringify({
-      tasks: tasksMap,
+      resumo: resumo,
       timestamp: Date.now()
     }));
   } catch(e) { console.warn('Cache não salvo:', e); }
@@ -774,12 +782,22 @@ async function init() {
     }
 
     if(cached) {
-      // ── MODO CACHE: instantâneo ──────────────────────────────────────────
+      // ── MODO CACHE: instantâneo (aplica o resumo leve salvo) ─────────────
       setProgress(60, `Cache local (${cached.age} min atrás) — carregando…`);
-      active.forEach(p => applyTasks(p, cached.tasks[p.id] || []));
+      active.forEach(p => {
+        const r = cached.resumo[p.id];
+        if(r) {
+          p.currentPhaseUID = r.fase;
+          p.currentPhaseCod = r.cod;
+          p.progPct  = r.pct;
+          p.progData = { doneAll: r.done, totalAll: r.tot, byUserPhase: {} };
+          p.tasksLoaded = true;
+          if(p.dtI) p.meta = metaSt(p.dtI, p.currentPhaseUID, p.durTotal);
+        }
+      });
       window._fromCache = cached.age;
       const comFase = active.filter(p => p.currentPhaseUID).length;
-      setProgress(95, `Cache aplicado — ${comFase}/${active.length} projetos com fase identificada`);
+      setProgress(95, `Cache aplicado — ${comFase}/${active.length} projetos`);
 
     } else {
       // ── MODO API: busca completa e salva cache ───────────────────────────
@@ -834,11 +852,11 @@ async function init() {
         falhados = active.filter(p => p.loadFailed || !p.currentPhaseUID);
       }
 
-      // Só salva cache se ≥70% dos projetos têm tarefas reais
-      const comTarefas = Object.values(TASKS_LOADED).filter(t => t && t.length > 0).length;
-      const pctCarregado = total > 0 ? Math.round(comTarefas / total * 100) : 0;
+      // Só salva cache se ≥70% dos projetos têm fase identificada
+      const comFase2 = active.filter(p => p.currentPhaseUID).length;
+      const pctCarregado = total > 0 ? Math.round(comFase2 / total * 100) : 0;
       if(pctCarregado >= 70) {
-        cacheSave(TASKS_LOADED);
+        cacheSave(PROJS_ENRICHED);
         console.log(`Cache salvo: ${pctCarregado}% dos projetos com tarefas`);
       } else {
         console.warn(`Cache NÃO salvo: apenas ${pctCarregado}% carregados`);
