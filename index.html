@@ -65,6 +65,7 @@ main{max-width:1380px;margin:0 auto;padding:22px 24px}
 .ph-name{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:5px;margin-bottom:2px}
 .ph-range{font-size:9px;color:var(--t3);margin-bottom:4px}
 .ph-tasks{font-size:9px;color:var(--t2);font-style:italic;margin-bottom:10px;line-height:1.4}
+.ph-hist{font-size:9px;color:var(--t2);margin-bottom:6px;padding:2px 5px;background:var(--bg);border-radius:3px;display:inline-block}
 .ph-count{font-size:28px;font-weight:700;line-height:1;margin-bottom:8px}
 .ph-sub{display:flex;gap:5px;margin-bottom:8px;flex-wrap:wrap}
 .ph-items{display:flex;flex-direction:column;gap:2px}
@@ -188,7 +189,8 @@ footer{text-align:center;padding:22px 0 30px;font-size:11px;color:var(--t3);font
     <div class="meta-pill">⏱ Meta: 8 meses</div>
     <button class="btn-refresh" id="btn-refresh" onclick="init()">↻ Atualizar</button>
     <button class="btn-refresh" onclick="cacheInvalidate();init()" title="Força nova busca na API ignorando o cache">🔄 Forçar atualização</button>
-    <button class="btn-refresh" onclick="abrirInspetor()" title="Inspecionar um projeto e entender a fase">&#128300; Inspecionar</button>
+    <button class="btn-refresh" onclick="abrirConcluidos()" title="Ver projetos concluídos e suas duracoes">&#9989; Concluídas</button>
+    <button class="btn-refresh" onclick="abrirInspetor()" title="Buscar um projeto e entender a fase">&#128269; Busca</button>
     <button class="btn-refresh" onclick="diagAPI()" title="Testa a API de tarefas e mostra resultado" id="btn-diag">🔍 Diagnosticar API</button>
     <div class="upd" id="upd">–</div>
   </div>
@@ -380,7 +382,7 @@ async function fetchAllTasks(projId) {
 // abertas(2), aguardando(4) ou a definir(5) numa fase anterior NAO seguram o
 // Percentual de conclusao geral a partir do qual o projeto entra em Reta Final.
 const PCT_RETA_FINAL = 75;
-const VERSAO = 'v9 · 24/07 · inspetor + corte 75%';
+const VERSAO = 'v11 · 24/07 · painel de concluídas';
 
 // Determina a fase atual do projeto a partir das tarefas reais.
 //
@@ -726,6 +728,7 @@ async function init() {
 
     setProgress(100, 'Concluído!');
     renderDashboard(true);
+    carregarHistorico(); // em segundo plano, nao bloqueia a tela
     const totalCarregados = PROJS_ENRICHED.filter(p=>p.tasksLoaded).length;
     const totalAtivos2 = PROJS_ENRICHED.filter(p=>p.status==='em_andamento').length;
     const cacheInfo = window._fromCache !== null && window._fromCache !== undefined
@@ -869,6 +872,9 @@ function renderDashboard(full) {
       <div class="ph-name"><span style="width:8px;height:8px;border-radius:50%;background:${ph.c};display:inline-block;flex-shrink:0"></span><span style="color:${ph.c}">${ph.l}</span></div>
       <div class="ph-range">${ph.s}</div>
       <div class="ph-tasks">${ph.tasks}</div>
+      ${(()=>{const h=(window._hist||{})[ph.id];
+        return h&&h.n ? `<div class="ph-hist">histórico: <b>${Math.round(h.soma/h.n)}d</b> (n=${h.n})</div>`
+                      : '<div class="ph-hist" style="opacity:.45">histórico: —</div>';})()}
       <div class="ph-count" style="color:${ph.c}">${items.length}</div>
       <div class="ph-sub">
         ${items.length?`<span class="badge b-blu">${items.length} em andamento</span>`:''}
@@ -1190,6 +1196,170 @@ window.diagAPI = async function() {
 };
 
 
+
+// ── MEDIA HISTORICA DE DURACAO POR FASE ──────────────────────────────────────
+// Usa os projetos ja CONCLUIDOS para medir quanto cada fase levou de fato.
+// Criterio: a fase termina na data da ultima tarefa concluida dela e comeca
+// onde a fase anterior terminou (a primeira comeca no inicio do projeto).
+// Assim as duracoes nao se sobrepoem e somam o tempo total da implantacao.
+const HIST_KEY  = 'sults_hist_v2';
+const HIST_TTL  = 12 * 60 * 60 * 1000;
+// A amostra sao TODOS os projetos concluidos no ano corrente.
+
+function histLoad(){
+  try {
+    const raw = localStorage.getItem(HIST_KEY);
+    if(!raw) return null;
+    const { hist, timestamp } = JSON.parse(raw);
+    if(Date.now() - timestamp > HIST_TTL) return null;
+    return hist;
+  } catch(e){ return null; }
+}
+function histSave(hist){
+  try { localStorage.setItem(HIST_KEY, JSON.stringify({ hist, timestamp: Date.now() })); }
+  catch(e){}
+}
+
+// Duracao de cada fase (1..5) para um projeto concluido, em dias
+function duracoesPorFase(dtInicio, tasks){
+  const fim = {}; // fase -> ultima data de conclusao
+  tasks.forEach(t => {
+    if(Number(t.situacao) !== 1) return;
+    let cod = t.fase?.codigo;
+    if(!cod && t.codigo){ const m = String(t.codigo).match(/^(F\d+)/i); if(m) cod = m[1].toUpperCase(); }
+    const uid = mapPhase(cod);
+    if(!uid) return;
+    const d = t.dtConclusao || t.dtFim;
+    if(!d) return;
+    const ts = new Date(String(d).slice(0,10)).getTime();
+    if(isNaN(ts)) return;
+    if(!fim[uid] || ts > fim[uid]) fim[uid] = ts;
+  });
+
+  const out = {};
+  let anterior = new Date(dtInicio).getTime();
+  if(isNaN(anterior)) return out;
+
+  for(let uid = 1; uid <= 5; uid++){
+    const f = fim[uid];
+    if(!f) continue;                 // fase sem tarefa concluida: ignorada
+    const dias = Math.round((f - anterior) / 864e5);
+    if(dias > 0 && dias < 1500) out[uid] = dias;  // descarta datas absurdas
+    if(f > anterior) anterior = f;
+  }
+  return out;
+}
+
+async function carregarHistorico(){
+  const cache = histLoad();
+  if(cache){ window._hist = cache; renderDashboard(true); return; }
+
+  const anoAtual = new Date().getFullYear();
+  const concluidos = PROJS_ENRICHED
+    .filter(p => p.status === 'concluido' && p.dtI && p.dtC
+                 && Number(String(p.dtC).slice(0,4)) === anoAtual)
+    .sort((a,b) => String(b.dtC).localeCompare(String(a.dtC)));
+
+  if(!concluidos.length) return;
+
+  const acc = {1:{soma:0,n:0},2:{soma:0,n:0},3:{soma:0,n:0},4:{soma:0,n:0},5:{soma:0,n:0}};
+  let lidos = 0;
+
+  for(const p of concluidos){
+    try {
+      const tasks = await fetchAllTasks(p.id);
+      const dur = duracoesPorFase(p.dtI, tasks);
+      Object.keys(dur).forEach(uid => { acc[uid].soma += dur[uid]; acc[uid].n++; });
+      lidos++;
+      const el = document.getElementById('upd');
+      if(el) el.textContent = `Histórico: ${lidos}/${concluidos.length} concluídos…`;
+    } catch(e){
+      console.warn('[SULTS] historico proj', p.id, e.message);
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  window._hist = acc;
+  histSave(acc);
+  renderDashboard(true);
+  const el = document.getElementById('upd');
+  if(el) el.textContent = FMTL.format(new Date()) + ' · histórico: ' + lidos + ' projetos';
+}
+
+
+// ── PAINEL DE PROJETOS CONCLUIDOS ────────────────────────────────────────────
+window.abrirConcluidos = function(){
+  const antigo = document.getElementById('conc-panel');
+  if(antigo){ antigo.remove(); return; }
+
+  const lista = PROJS_ENRICHED
+    .filter(p => p.status === 'concluido' && p.dtI && p.dtC)
+    .map(p => ({...p, dias: Math.round((new Date(p.dtC) - new Date(p.dtI)) / 864e5)}))
+    .filter(p => p.dias > 0)
+    .sort((a,b) => String(b.dtC).localeCompare(String(a.dtC)));
+
+  const total   = lista.length;
+  const somaD   = lista.reduce((s,p) => s + p.dias, 0);
+  const media   = total ? Math.round(somaD/total) : 0;
+  const noPrazo = lista.filter(p => p.dias <= META).length;
+  const pctOk   = total ? Math.round(noPrazo/total*100) : 0;
+
+  const el = document.createElement('div');
+  el.id = 'conc-panel';
+  el.style.cssText = 'position:fixed;top:60px;right:20px;width:660px;max-height:80vh;overflow-y:auto;'
+    + 'background:var(--sur);border:1px solid var(--brdm);border-radius:10px;padding:16px;z-index:999;'
+    + 'box-shadow:0 4px 24px rgba(0,0,0,.18);font-size:12px';
+
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+    + '<strong style="font-size:13px">Projetos concluídos (' + total + ')</strong>'
+    + '<span onclick="document.getElementById(\'conc-panel\').remove()" '
+    + 'style="cursor:pointer;color:var(--t2)">&#10005;</span></div>';
+
+  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">'
+    + '<div style="background:var(--bg);padding:8px 10px;border-radius:6px">'
+    + '<div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:.05em">Duração média</div>'
+    + '<div style="font-size:18px;font-weight:600">' + mStr(media) + '</div>'
+    + '<div style="font-size:10px;color:var(--t3)">' + media + ' dias</div></div>'
+    + '<div style="background:var(--bg);padding:8px 10px;border-radius:6px">'
+    + '<div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:.05em">Dentro da meta</div>'
+    + '<div style="font-size:18px;font-weight:600;color:var(--grn)">' + noPrazo + '</div>'
+    + '<div style="font-size:10px;color:var(--t3)">' + pctOk + '% dos concluídos</div></div>'
+    + '<div style="background:var(--bg);padding:8px 10px;border-radius:6px">'
+    + '<div style="font-size:10px;color:var(--t2);text-transform:uppercase;letter-spacing:.05em">Acima da meta</div>'
+    + '<div style="font-size:18px;font-weight:600;color:var(--red)">' + (total-noPrazo) + '</div>'
+    + '<div style="font-size:10px;color:var(--t3)">meta: 8 meses / ' + META + 'd</div></div></div>';
+
+  html += '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+    + '<thead><tr style="background:var(--bg)">'
+    + '<th style="text-align:left;padding:5px 7px">Projeto</th>'
+    + '<th style="text-align:left;padding:5px 7px">Analista</th>'
+    + '<th style="padding:5px 7px">Início</th>'
+    + '<th style="padding:5px 7px">Conclusão</th>'
+    + '<th style="padding:5px 7px">Duração</th>'
+    + '<th style="padding:5px 7px">vs Meta</th></tr></thead><tbody>';
+
+  lista.forEach(p => {
+    const dif = p.dias - META;
+    const cor = dif > 0 ? 'var(--red)' : 'var(--grn)';
+    const txt = dif > 0 ? '+' + (dif/30.4).toFixed(1) + 'm' : (Math.abs(dif)/30.4).toFixed(1) + 'm antes';
+    html += '<tr style="border-bottom:1px solid var(--brd)">'
+      + '<td style="padding:5px 7px;max-width:220px;white-space:nowrap;overflow:hidden;'
+      + 'text-overflow:ellipsis" title="' + p.nome + '">' + p.nome + '</td>'
+      + '<td style="padding:5px 7px;color:var(--t2)">' + fn(p.resp) + '</td>'
+      + '<td style="padding:5px 7px;text-align:center;font-family:\'DM Mono\',monospace">' + fmt(p.dtI) + '</td>'
+      + '<td style="padding:5px 7px;text-align:center;font-family:\'DM Mono\',monospace">' + fmt(p.dtC) + '</td>'
+      + '<td style="padding:5px 7px;text-align:center;font-weight:600;font-family:\'DM Mono\',monospace">'
+      + mStr(p.dias) + ' <span style="color:var(--t3);font-weight:400">(' + p.dias + 'd)</span></td>'
+      + '<td style="padding:5px 7px;text-align:center;color:' + cor + ';font-weight:600">' + txt + '</td>'
+      + '</tr>';
+  });
+  html += '</tbody></table>';
+  if(!total) html += '<div style="color:var(--t3);font-style:italic">Nenhum projeto concluído com datas válidas.</div>';
+
+  el.innerHTML = html;
+  document.body.appendChild(el);
+};
+
 // ── INSPETOR DE PROJETO ──────────────────────────────────────────────────────
 // Mostra, para um projeto, a distribuicao real de tarefas por fase e explica
 // qual regra determinou a fase atual.
@@ -1244,7 +1414,8 @@ window.inspecionar = async function(){
     let cod = t.fase?.codigo;
     if(!cod && t.codigo){ const m = String(t.codigo).match(/^(F\d+)/i); if(m) cod = m[1].toUpperCase(); }
     if(!cod) cod = '(sem fase)';
-    if(!porFase[cod]) porFase[cod] = {c:0,a:0,ab:0,ag:0,o:0,tot:0};
+    if(!porFase[cod]) porFase[cod] = {c:0,a:0,ab:0,ag:0,o:0,tot:0,nome:''};
+    if(!porFase[cod].nome && t.fase?.nome) porFase[cod].nome = t.fase.nome;
     const s = Number(t.situacao);
     porFase[cod].tot++;
     if(s===1) porFase[cod].c++;
@@ -1274,7 +1445,7 @@ window.inspecionar = async function(){
 
   html += '<table style="width:100%;border-collapse:collapse;font-size:11px">'
     + '<thead><tr style="background:var(--bg)">'
-    + '<th style="text-align:left;padding:4px 6px">Fase</th>'
+    + '<th style="text-align:left;padding:4px 6px">Fase / Etapa</th>'
     + '<th style="padding:4px 6px">Total</th>'
     + '<th style="padding:4px 6px;color:#16A34A">Concl.</th>'
     + '<th style="padding:4px 6px;color:#D97706">Andam.</th>'
@@ -1288,7 +1459,9 @@ window.inspecionar = async function(){
     const define  = DEFINEM.includes(f);
     html += '<tr style="border-bottom:1px solid var(--brd)'
       + (define && iniciou ? ';background:#F0FDF4' : '') + '">'
-      + '<td style="padding:4px 6px"><b>' + f + '</b></td>'
+      + '<td style="padding:4px 6px"><b>' + f + '</b>'
+      + (d.nome ? ' <span style="color:var(--t2);font-weight:400">' + d.nome + '</span>' : '')
+      + '</td>'
       + '<td style="padding:4px 6px;text-align:center">' + d.tot + '</td>'
       + '<td style="padding:4px 6px;text-align:center;color:#16A34A">' + d.c + '</td>'
       + '<td style="padding:4px 6px;text-align:center;color:#D97706">' + d.a + '</td>'
