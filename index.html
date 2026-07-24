@@ -203,7 +203,7 @@ footer{text-align:center;padding:22px 0 30px;font-size:11px;color:var(--t3);font
   </div>
 </main>
 
-<footer>Dashboard ao vivo · API Sults v1 · Meta oficial: <strong>8 meses / 243 dias</strong></footer>
+<footer>Dashboard ao vivo · API Sults v1 · Meta oficial: <strong>8 meses / 243 dias</strong> · <span id="versao-tag" style="opacity:.8"></span></footer>
 
 <script>
 // A API Key agora fica segura no proxy do servidor (variável de ambiente).
@@ -380,6 +380,7 @@ async function fetchAllTasks(projId) {
 // abertas(2), aguardando(4) ou a definir(5) numa fase anterior NAO seguram o
 // Percentual de conclusao geral a partir do qual o projeto entra em Reta Final.
 const PCT_RETA_FINAL = 75;
+const VERSAO = 'v9 · 24/07 · inspetor + corte 75%';
 
 // Determina a fase atual do projeto a partir das tarefas reais.
 //
@@ -1315,6 +1316,9 @@ window.inspecionar = async function(){
 
   out.innerHTML = html;
 };
+
+const _vt = document.getElementById('versao-tag');
+if(_vt) _vt.textContent = VERSAO;
 
 // Start
 init();
