@@ -188,6 +188,7 @@ footer{text-align:center;padding:22px 0 30px;font-size:11px;color:var(--t3);font
     <div class="meta-pill">⏱ Meta: 8 meses</div>
     <button class="btn-refresh" id="btn-refresh" onclick="init()">↻ Atualizar</button>
     <button class="btn-refresh" onclick="cacheInvalidate();init()" title="Força nova busca na API ignorando o cache">🔄 Forçar atualização</button>
+    <button class="btn-refresh" onclick="abrirInspetor()" title="Inspecionar um projeto e entender a fase">&#128300; Inspecionar</button>
     <button class="btn-refresh" onclick="diagAPI()" title="Testa a API de tarefas e mostra resultado" id="btn-diag">🔍 Diagnosticar API</button>
     <div class="upd" id="upd">–</div>
   </div>
@@ -400,11 +401,11 @@ function getCurrentPhase(tasks) {
   const DEFINEM_ETAPA = [3,4,6,7,8,9];
 
   const phases = {};
-  let totalGeral = 0, doneGeral = 0, f17Iniciada = false, pontoAprovado = false, achouT129 = false;
+  let totalGeral = 0, doneGeral = 0, pontoAprovado = false, achouT129 = false;
 
   tasks.forEach(t => {
     const nomeLower = (t.nome || '').toLowerCase();
-    if(IGNORAR_NOME.some(termo => nomeLower.includes(termo))) return;
+    const ignorada = IGNORAR_NOME.some(termo => nomeLower.includes(termo));
 
     // 1) fase.codigo direto ("F07")
     let cod = t.fase?.codigo;
@@ -439,9 +440,11 @@ function getCurrentPhase(tasks) {
     const isDone     = sit === 1;
     const isIniciada = sit === 1 || sit === 3;
 
-    // Percentual geral considera TODAS as fases (inclusive as paralelas)
+    // Percentual geral considera TODAS as tarefas e todas as fases,
+    // inclusive as paralelas e as ignoradas — para bater com o numero do Sults.
     totalGeral++;
     if(isDone) doneGeral++;
+    if(ignorada) return; // ignoradas nao entram no calculo da fase
 
     // T129 "Ponto Aprovado" e o divisor entre Busca de Ponto e Negociacao.
     // O codigo pode vir como "T129" ou "F04-T129"; o nome tambem serve de fallback.
@@ -451,7 +454,6 @@ function getCurrentPhase(tasks) {
       if(isDone) pontoAprovado = true;
     }
 
-    if(n === 17 && isIniciada) f17Iniciada = true;
     if(!DEFINEM_ETAPA.includes(n)) return; // paralela: nao define etapa
 
     if(!phases[cod]) phases[cod] = {total:0, done:0, iniciadas:0, cod, n};
@@ -462,8 +464,10 @@ function getCurrentPhase(tasks) {
 
   const pctGeral = totalGeral ? (doneGeral / totalGeral * 100) : 0;
 
-  // Reta Final: conclusao geral atingiu o corte, ou a inauguracao ja comecou
-  if(pctGeral >= PCT_RETA_FINAL || f17Iniciada) return 'F17';
+  // Reta Final depende UNICAMENTE do corte de conclusao geral.
+  // A F17 tem tarefas administrativas concluidas cedo (ex: "Alinhamento -
+  // Checklist de Inauguracao") que nao significam reta final de verdade.
+  if(pctGeral >= PCT_RETA_FINAL) return 'F17';
 
   const sorted = Object.values(phases).sort((a,b) => a.n - b.n);
   if(!sorted.length) return null;
@@ -1182,6 +1186,134 @@ window.diagAPI = async function() {
 
   btn.textContent = '🔍 Diagnosticar API';
   btn.disabled = false;
+};
+
+
+// ── INSPETOR DE PROJETO ──────────────────────────────────────────────────────
+// Mostra, para um projeto, a distribuicao real de tarefas por fase e explica
+// qual regra determinou a fase atual.
+window.abrirInspetor = function(){
+  const antigo = document.getElementById('insp-panel');
+  if(antigo){ antigo.remove(); return; }
+  const el = document.createElement('div');
+  el.id = 'insp-panel';
+  el.style.cssText = 'position:fixed;top:60px;right:20px;width:560px;max-height:78vh;overflow-y:auto;'
+    + 'background:var(--sur);border:1px solid var(--brdm);border-radius:10px;padding:16px;z-index:999;'
+    + 'box-shadow:0 4px 24px rgba(0,0,0,.18);font-size:12px';
+  el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'
+    + '<strong style="font-size:13px">Inspecionar projeto</strong>'
+    + '<span onclick="document.getElementById(\'insp-panel\').remove()" style="cursor:pointer;color:var(--t2)">&#10005;</span></div>'
+    + '<div style="display:flex;gap:6px;margin-bottom:12px">'
+    + '<input id="insp-q" placeholder="parte do nome (ex: Paineras)" '
+    + 'style="flex:1;padding:6px 10px;border:1px solid var(--brdm);border-radius:6px;font-family:inherit;font-size:12px">'
+    + '<button onclick="inspecionar()" style="padding:6px 14px;background:var(--teal);color:#fff;border:none;'
+    + 'border-radius:6px;cursor:pointer;font-size:12px;font-weight:500">Analisar</button></div>'
+    + '<div id="insp-out" style="font-size:11px;line-height:1.6"></div>';
+  document.body.appendChild(el);
+  const inp = document.getElementById('insp-q');
+  inp.focus();
+  inp.addEventListener('keydown', e => { if(e.key === 'Enter') inspecionar(); });
+};
+
+window.inspecionar = async function(){
+  const q = (document.getElementById('insp-q').value || '').toLowerCase().trim();
+  const out = document.getElementById('insp-out');
+  if(!q){ out.innerHTML = 'Digite parte do nome do projeto.'; return; }
+
+  const p = PROJS_ENRICHED.find(x => (x.nome||'').toLowerCase().includes(q));
+  if(!p){ out.innerHTML = '<span style="color:var(--red)">Projeto nao encontrado.</span>'; return; }
+
+  out.innerHTML = 'Buscando tarefas de <b>' + p.nome + '</b>...';
+
+  let tasks;
+  try {
+    tasks = (TASKS_LOADED[p.id] && TASKS_LOADED[p.id].length)
+      ? TASKS_LOADED[p.id]
+      : await fetchAllTasks(p.id);
+    TASKS_LOADED[p.id] = tasks;
+  } catch(e){
+    out.innerHTML = '<span style="color:var(--red)">Erro ao buscar tarefas: ' + e.message + '</span>';
+    return;
+  }
+
+  // distribuicao por fase
+  const porFase = {};
+  let t129 = null;
+  tasks.forEach(t => {
+    let cod = t.fase?.codigo;
+    if(!cod && t.codigo){ const m = String(t.codigo).match(/^(F\d+)/i); if(m) cod = m[1].toUpperCase(); }
+    if(!cod) cod = '(sem fase)';
+    if(!porFase[cod]) porFase[cod] = {c:0,a:0,ab:0,ag:0,o:0,tot:0};
+    const s = Number(t.situacao);
+    porFase[cod].tot++;
+    if(s===1) porFase[cod].c++;
+    else if(s===3) porFase[cod].a++;
+    else if(s===2) porFase[cod].ab++;
+    else if(s===4) porFase[cod].ag++;
+    else porFase[cod].o++;
+
+    const cd = String(t.codigo||'');
+    if(/(^|-)T129$/i.test(cd) || (t.nome||'').toLowerCase().includes('ponto aprovado')) t129 = t;
+  });
+
+  const done = tasks.filter(t => Number(t.situacao)===1).length;
+  const pct  = tasks.length ? (done/tasks.length*100) : 0;
+  const cod  = getCurrentPhase(tasks);
+  const uid  = mapPhase(cod);
+  const NOMES = {1:'Busca de Ponto',2:'Ponto: Neg. e Contratos',3:'Planejamento e Projetos',
+                 4:'Execucao de Obra',5:'Reta Final'};
+  const DEFINEM = ['F03','F04','F06','F07','F08','F09'];
+
+  let html = '<div style="background:var(--bg);padding:8px 10px;border-radius:6px;margin-bottom:10px">'
+    + '<b>' + p.nome + '</b><br>'
+    + 'Tarefas carregadas: <b>' + tasks.length + '</b> &middot; concluidas: <b>' + done + '</b> ('
+    + pct.toFixed(1) + '%)<br>'
+    + 'Fase calculada: <b style="color:var(--teal)">' + cod + ' &rarr; ' + (NOMES[uid]||'-') + '</b>'
+    + '</div>';
+
+  html += '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+    + '<thead><tr style="background:var(--bg)">'
+    + '<th style="text-align:left;padding:4px 6px">Fase</th>'
+    + '<th style="padding:4px 6px">Total</th>'
+    + '<th style="padding:4px 6px;color:#16A34A">Concl.</th>'
+    + '<th style="padding:4px 6px;color:#D97706">Andam.</th>'
+    + '<th style="padding:4px 6px">Aberta</th>'
+    + '<th style="padding:4px 6px">Aguard.</th>'
+    + '<th style="padding:4px 6px">Define?</th></tr></thead><tbody>';
+
+  Object.keys(porFase).sort().forEach(f => {
+    const d = porFase[f];
+    const iniciou = (d.c + d.a) > 0;
+    const define  = DEFINEM.includes(f);
+    html += '<tr style="border-bottom:1px solid var(--brd)'
+      + (define && iniciou ? ';background:#F0FDF4' : '') + '">'
+      + '<td style="padding:4px 6px"><b>' + f + '</b></td>'
+      + '<td style="padding:4px 6px;text-align:center">' + d.tot + '</td>'
+      + '<td style="padding:4px 6px;text-align:center;color:#16A34A">' + d.c + '</td>'
+      + '<td style="padding:4px 6px;text-align:center;color:#D97706">' + d.a + '</td>'
+      + '<td style="padding:4px 6px;text-align:center;color:var(--t3)">' + d.ab + '</td>'
+      + '<td style="padding:4px 6px;text-align:center;color:var(--t3)">' + d.ag + '</td>'
+      + '<td style="padding:4px 6px;text-align:center">'
+      + (define ? (iniciou ? 'SIM' : 'nao iniciada') : 'paralela') + '</td></tr>';
+  });
+  html += '</tbody></table>';
+
+  html += '<div style="margin-top:12px;padding:8px 10px;background:var(--bg);border-radius:6px">'
+    + '<b>Regras aplicadas</b><br>';
+  if(t129){
+    const s = Number(t129.situacao);
+    html += 'T129 encontrada: <b>' + (t129.codigo||'-') + '</b> &mdash; "' + (t129.nome||'') + '"<br>'
+      + 'situacao = <b>' + t129.situacao + '</b> ('
+      + (s===1?'Concluida':s===3?'Em andamento':s===2?'Aberta':s===4?'Aguardando':'outra') + ')<br>'
+      + (s===1 ? 'Ponto aprovado &rarr; pode entrar em Neg. e Contratos'
+               : '<span style="color:#D97706">Ponto NAO aprovado &rarr; travado em Busca de Ponto</span>') + '<br>';
+  } else {
+    html += '<span style="color:#D97706">T129 nao encontrada neste projeto</span><br>';
+  }
+  html += 'Corte de Reta Final: ' + pct.toFixed(1) + '% de ' + PCT_RETA_FINAL + '% &rarr; '
+    + (pct >= PCT_RETA_FINAL ? 'ATINGIDO' : 'nao atingido') + '</div>';
+
+  out.innerHTML = html;
 };
 
 // Start
