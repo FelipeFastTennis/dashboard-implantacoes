@@ -321,110 +321,108 @@ async function descobrirLimite(projId) {
   return 5; // fallback mínimo seguro
 }
 
-async function fetchAllTasks(projId) {
-  if(TASK_LIMIT === 0) {
-    TASK_LIMIT = await descobrirLimite(projId);
+async function apiFetchRetry(url, max=6){
+  for(let t=0;t<max;t++){
+    try { return await apiFetch(url); }
+    catch(e){ if(t===max-1) throw e; await new Promise(r=>setTimeout(r,800*(t+1))); }
   }
-  let all=[], page=0, totalPages=1;
-  // Busca TODAS as páginas. Se qualquer página falhar após retries, lança erro
-  // (o projeto será reprocessado inteiro depois — nunca classificado com dados parciais).
-  while(page < totalPages) {
-    let d = null, tentativas = 0;
-    while(tentativas < 6) {
-      try {
-        d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=${TASK_LIMIT}`);
-        break;
-      } catch(e) {
-        tentativas++;
-        if(tentativas >= 6) throw new Error(`Página ${page} falhou após 6 tentativas`);
-        await new Promise(r => setTimeout(r, 1000 * tentativas)); // espera crescente
-      }
-    }
-    all = all.concat(d.data||[]);
-    totalPages = d.totalPage || 1;
-    if((d.data||[]).length === 0) break;
-    page++;
-    // Pequena pausa entre páginas do mesmo projeto
-    if(page < totalPages) await new Promise(r => setTimeout(r, 200));
-  }
-  return all;
 }
 
-// Determina fase atual: fase com menor número com tarefas não concluídas
+// Busca TODAS as tarefas com verificacao de completude.
+// A API usa "start", mas nao esta documentado se e numero de pagina (0,1,2...)
+// ou indice de registro (0,50,100...). O codigo testa os dois modos, deduplica
+// por id e so aceita o resultado quando o total baixado bate com o "size"
+// informado pela API. Se nao bater, lanca erro e o projeto e reprocessado —
+// nunca e classificado com dados parciais.
+async function fetchAllTasks(projId) {
+  if(TASK_LIMIT === 0) TASK_LIMIT = await descobrirLimite(projId);
+
+  let melhor = [], size = null;
+
+  for(const modo of ['pagina','offset']) {
+    const vistos = new Set();
+    let all = [], i = 0, guarda = 0;
+
+    while(guarda++ < 400) {
+      const start = (modo === 'pagina') ? i : i * TASK_LIMIT;
+      const d = await apiFetchRetry(`/implantacao/projeto/${projId}/tarefa?start=${start}&limit=${TASK_LIMIT}`);
+      const lote = d.data || [];
+      if(d.size != null) size = d.size;
+
+      let novos = 0;
+      for(const t of lote){
+        const k = t.id ?? (t.codigo + '|' + t.nome);
+        if(!vistos.has(k)){ vistos.add(k); all.push(t); novos++; }
+      }
+
+      if(lote.length === 0) break;
+      if(novos === 0) break;                       // so repetidos -> modo errado
+      if(size != null && all.length >= size) break; // completo
+      i++;
+      await new Promise(r=>setTimeout(r,120));
+    }
+
+    if(all.length > melhor.length) melhor = all;
+    if(size != null && melhor.length >= size) break; // completo, nao testa o outro modo
+  }
+
+  if(size != null && melhor.length < size)
+    throw new Error(`Incompleto: ${melhor.length}/${size} tarefas`);
+
+  return melhor;
+}
+
+
+// Determina a fase atual do projeto a partir das tarefas reais.
+// REGRA: a fase atual e a MAIS AVANCADA (maior numero) que ja tenha pelo menos
+// uma tarefa concluida (situacao=1) ou em andamento (situacao=3). Tarefas apenas
+// abertas(2), aguardando(4) ou a definir(5) numa fase anterior NAO seguram o
+// projeto nela. F05 (Documentacao) e ignorada por correr em paralelo.
 function getCurrentPhase(tasks) {
   if(!tasks || tasks.length === 0) return null;
 
-  // Debug da estrutura real (1 vez por sessão)
-  if(!window._dbg) {
-    window._dbg = true;
-    const t = tasks[0];
-    const info = {
-      fase: t.fase,
-      codigo: t.codigo,
-      situacao: t.situacao,
-      dtConclusao: t.dtConclusao,
-      dtFim: t.dtFim,
-      porcentagem: t.porcentagemConclusao
-    };
-    console.log('[SULTS] Estrutura de tarefa:', JSON.stringify(info));
-    // Contar distribuição de situacao para entender os dados
-    const sitCount = {};
-    tasks.forEach(x => { const s = x.situacao ?? 'null'; sitCount[s] = (sitCount[s]||0)+1; });
-    console.log('[SULTS] Distribuição de situacao:', JSON.stringify(sitCount));
-    const el = document.getElementById('dbg-info');
-    if(el) { el.style.display='block'; el.innerHTML = '🔍 <strong>situacao dos ' + tasks.length + ' registros:</strong> ' + JSON.stringify(sitCount) + ' — (1=Concluído 2=Aberto 3=Andamento 4=Aguardando 5=Definir)'; }
-  }
-
-  // Tarefas ignoradas no cálculo da fase (dependem de prazos externos
-  // de concessionárias e ficam abertas travando o projeto em fases anteriores)
-  const IGNORAR_NOME = [
-    'solicitar a ligação rede',   // Hidro Sanitária + energia elétrica
-  ];
+  // Tarefas que dependem de terceiros e ficam abertas travando o projeto
+  const IGNORAR_NOME = ['solicitar a ligacao rede', 'solicitar a ligação rede'];
 
   const phases = {};
+
   tasks.forEach(t => {
-    // Ignorar tarefas que dependem de terceiros (concessionárias)
     const nomeLower = (t.nome || '').toLowerCase();
     if(IGNORAR_NOME.some(termo => nomeLower.includes(termo))) return;
 
-    // Tentativa 1: fase.codigo direto ("F07")
+    // 1) fase.codigo direto ("F07")
     let cod = t.fase?.codigo;
-
-    // Tentativa 2: parse do campo codigo ("F07-T134" → "F07")
+    // 2) parse do codigo da tarefa ("F07-T134" -> "F07")
     if(!cod && t.codigo) {
       const m = String(t.codigo).match(/^(F\d+)/i);
       if(m) cod = m[1].toUpperCase();
     }
-
-    // Tentativa 3: fase.nome ("Obras - Civil" → mapeamos por nome conhecido)
+    // 3) mapeamento pelo nome da fase
     if(!cod && t.fase?.nome) {
-      const nomeFase = String(t.fase.nome).toLowerCase();
-      if(nomeFase.includes('contrat'))     cod = 'F01';
-      else if(nomeFase.includes('day'))    cod = 'F02';
-      else if(nomeFase.includes('mercado'))cod = 'F03';
-      else if(nomeFase.includes('ponto'))  cod = 'F04';
-      else if(nomeFase.includes('doc'))    cod = 'F05';
-      else if(nomeFase.includes('plane'))  cod = 'F06';
-      else if(nomeFase.includes('civil'))  cod = 'F07';
-      else if(nomeFase.includes('quadra')) cod = 'F08';
-      else if(nomeFase.includes('mobil'))  cod = 'F10';
-      else if(nomeFase.includes('selet'))  cod = 'F11';
-      else if(nomeFase.includes('market')) cod = 'F14';
-      else if(nomeFase.includes('inaug'))  cod = 'F17';
+      const f = String(t.fase.nome).toLowerCase();
+      if(f.includes('contrat'))      cod = 'F01';
+      else if(f.includes('day'))     cod = 'F02';
+      else if(f.includes('mercado')) cod = 'F03';
+      else if(f.includes('ponto'))   cod = 'F04';
+      else if(f.includes('doc'))     cod = 'F05';
+      else if(f.includes('plane'))   cod = 'F06';
+      else if(f.includes('civil'))   cod = 'F07';
+      else if(f.includes('quadra'))  cod = 'F08';
+      else if(f.includes('mobil'))   cod = 'F10';
+      else if(f.includes('selet'))   cod = 'F11';
+      else if(f.includes('market'))  cod = 'F14';
+      else if(f.includes('inaug'))   cod = 'F17';
     }
-
     if(!cod) return;
+
     const n = parseInt(cod.replace(/\D/g,''));
     if(n === 5) return; // F05 ignorada
 
-    // Situação: 1=Concluído · 2=Aberto · 3=Em Andamento · 4=Aguardando · 5=Definir
-    // O campo "situacao" é a fonte confiável. A dtConclusao da API mistura
-    // data planejada com data real, então NÃO serve para inferir conclusão.
+    // O campo "situacao" e a fonte confiavel.
+    // 1=Concluido 2=Aberto 3=Em Andamento 4=Aguardando 5=Definir
     const sit = Number(t.situacao);
-    const isDone      = sit === 1;
-    const isAndamento = sit === 3;
-    // "Iniciada" = concluída OU em andamento. Aberta(2), Aguardando(4), Definir(5) não contam.
-    const isIniciada  = isDone || isAndamento;
+    const isDone     = sit === 1;
+    const isIniciada = sit === 1 || sit === 3;
 
     if(!phases[cod]) phases[cod] = {total:0, done:0, iniciadas:0, cod, n};
     phases[cod].total++;
@@ -435,196 +433,12 @@ function getCurrentPhase(tasks) {
   const sorted = Object.values(phases).sort((a,b) => a.n - b.n);
   if(!sorted.length) return null;
 
-  // REGRA: a fase atual é a MAIS AVANÇADA (maior número) que já tenha pelo menos
-  // uma tarefa concluída ou em andamento. Tarefas apenas "abertas" ou "aguardando"
-  // numa fase anterior não seguram o projeto lá.
   const iniciadas = sorted.filter(ph => ph.iniciadas > 0);
-  if(iniciadas.length === 0) return sorted[0].cod; // nada iniciado → 1ª fase presente
+  if(iniciadas.length === 0) return sorted[0].cod;
 
-  // A mais avançada com trabalho iniciado é a fase atual do projeto
   return iniciadas[iniciadas.length - 1].cod;
 }
 
-
-function mapPhase(codigo) {
-  if(!codigo) return null;
-  const n = parseInt(codigo.replace(/\D/g,''));
-  if(n<=2)  return null; // F01–F02: pré-implantação (irrelevante)
-  if(n===3) return 1;    // F03: Busca de Ponto
-  if(n===4) return 2;    // F04: Ponto — Negociação e Contratos
-  if(n===5) return null; // F05: Documentação — IGNORADA (corre em paralelo)
-  if(n===6) return 3;    // F06: Planejamento e Projetos
-  if(n<=9)  return 4;    // F07–F09: Execução de Obra
-  return 5;              // F10–F17: Reta Final
-}
-
-function days(a) {
-  return Math.round((TODAY - new Date(a)) / 864e5);
-}
-function mStr(d){ return (d/30.4).toFixed(1)+'m' }
-function fn(n){ return n ? n.split(' ')[0] : '—' }
-function ini(n){ if(!n)return'?'; const p=n.split(' '); return(p[0][0]+(p[1]?p[1][0]:'')).toUpperCase() }
-function fmt(d){ if(!d)return'—'; const dt=new Date(d); return FMT.format(dt) }
-function barColor(pct){ return pct>100?'#DC2626':pct>82?'#EA580C':pct>60?'#D97706':'#16A34A' }
-function metaSt(dtI, phaseUID, durTotal){
-  const d = days(dtI);
-  // Tempo de referência para a meta: usa o tempo TOTAL previsto se disponível,
-  // senão o tempo já decorrido
-  const dRef = (durTotal != null && durTotal > 0) ? durTotal : d;
-
-  // 1. Tempo total previsto estoura a meta de 8 meses
-  if(dRef > META) return { l:'Estourou — '+mStr(dRef)+' previstos', cls:'b-red' };
-
-  // 2. Ponto não definido após 40 dias (usa tempo decorrido real)
-  if(phaseUID === 1 && d > 40)
-    return { l:'Em risco — ponto não definido ('+d+'d)', cls:'b-ora' };
-
-  // 3. Acima de 5 meses decorridos e ainda não está em Obra ou Reta Final
-  if(phaseUID !== null && phaseUID < 4 && d > 150)
-    return { l:'Em risco — '+mStr(d)+' sem iniciar obra', cls:'b-ora' };
-
-  return { l:'No prazo — '+mStr(dRef), cls:'b-grn' };
-}
-
-async function apiFetch(url, tentativa=0) {
-  // url vem como "/implantacao/projeto?start=0&limit=30"
-  // Precisamos separar o path da query e montar: /api/sults?path=PATH&start=0&limit=30
-  const [path, qs] = url.split('?');
-  const proxyUrl = `${BASE}${encodeURIComponent(path)}${qs ? '&' + qs : ''}`;
-
-  const r = await fetch(proxyUrl, {
-    headers: { 'Content-Type': 'application/json;charset=UTF-8' }
-  });
-  // 429 = rate limit → espera progressiva e tenta de novo (até 4x)
-  if(r.status === 429 && tentativa < 6) {
-    const espera = 1000 * Math.pow(2, tentativa);
-    await new Promise(res => setTimeout(res, espera));
-    return apiFetch(url, tentativa + 1);
-  }
-  if(!r.ok) throw new Error(`HTTP ${r.status}`);
-  return r.json();
-}
-
-async function fetchAllProjects() {
-  let all=[], page=0;
-  while(true){
-    let d;
-    try {
-      d = await apiFetch(`/implantacao/projeto?start=${page}&limit=30`);
-    } catch(e) {
-      d = await apiFetch(`/implantacao/projeto?start=${page}&limit=10`);
-    }
-    all = all.concat(d.data||[]);
-    if(page+1 >= (d.totalPage||1) || (d.data||[]).length===0) break;
-    page++;
-  }
-  return all;
-}
-
-// Descobre o maior limit aceito pela API testando valores decrescentes
-async function descobrirLimite(projId) {
-  const candidatos = [50, 30, 20, 10, 5];
-  for(const lim of candidatos) {
-    try {
-      const d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=0&limit=${lim}`);
-      if(d && d.data) {
-        console.log(`[SULTS] Limite descoberto: ${lim}`);
-        return lim;
-      }
-    } catch(e) {
-      // Esse limite falhou (400), tenta o próximo menor
-      console.warn(`[SULTS] limit=${lim} rejeitado, tentando menor…`);
-    }
-  }
-  return 5; // fallback mínimo seguro
-}
-
-async function fetchAllTasks(projId) {
-  if(TASK_LIMIT === 0) {
-    TASK_LIMIT = await descobrirLimite(projId);
-  }
-  let all=[], page=0, totalPages=1;
-  // Busca TODAS as páginas. Se qualquer página falhar após retries, lança erro
-  // (o projeto será reprocessado inteiro depois — nunca classificado com dados parciais).
-  while(page < totalPages) {
-    let d = null, tentativas = 0;
-    while(tentativas < 6) {
-      try {
-        d = await apiFetch(`/implantacao/projeto/${projId}/tarefa?start=${page}&limit=${TASK_LIMIT}`);
-        break;
-      } catch(e) {
-        tentativas++;
-        if(tentativas >= 6) throw new Error(`Página ${page} falhou após 6 tentativas`);
-        await new Promise(r => setTimeout(r, 1000 * tentativas)); // espera crescente
-      }
-    }
-    all = all.concat(d.data||[]);
-    totalPages = d.totalPage || 1;
-    if((d.data||[]).length === 0) break;
-    page++;
-    // Pequena pausa entre páginas do mesmo projeto
-    if(page < totalPages) await new Promise(r => setTimeout(r, 200));
-  }
-  return all;
-}
-
-// Determina fase atual: fase com menor número com tarefas não concluídas
-function getCurrentPhase(tasks) {
-  if(!tasks || tasks.length === 0) return null;
-
-  // Debug: loga estrutura da primeira tarefa uma vez (ver no console F12)
-  if(!window._taskDebugDone) {
-    window._taskDebugDone = true;
-    const t0 = tasks[0];
-    console.log('[SULTS DEBUG] Estrutura da 1a tarefa:', JSON.stringify({
-      id: t0.id, nome: t0.nome?.slice(0,30),
-      codigo: t0.codigo, fase: t0.fase,
-      situacao: t0.situacao, dtConclusao: t0.dtConclusao
-    }, null, 2));
-  }
-
-  const phases = {};
-
-  tasks.forEach(t => {
-    // Forma 1: campo fase.codigo (ex: "F07")
-    let cod = t.fase?.codigo;
-
-    // Forma 2: parse do codigo da tarefa (ex: "F07-T134" → "F07")
-    if(!cod && t.codigo) {
-      const m = String(t.codigo).match(/^(F\d+)/i);
-      if(m) cod = m[1].toUpperCase();
-    }
-
-    // Forma 3: nome da fase via fase.nome (ex: "Obras - Civil" → não tem código, ignora)
-    if(!cod) return;
-
-    const n = parseInt(cod.replace(/\D/g,''));
-    if(n === 5) return; // F05 ignorada — corre em paralelo
-
-    // Determinar se tarefa está concluída
-    // Forma A: situacao === 1
-    // Forma B: situacao é string "1"
-    // Forma C: dtConclusao preenchida (quando situacao não vem)
-    const isDone = t.situacao === 1
-      || t.situacao === '1'
-      || (t.situacao == null && t.dtConclusao != null && t.dtConclusao !== '');
-
-    if(!phases[cod]) phases[cod] = {total:0, done:0, cod};
-    phases[cod].total++;
-    if(isDone) phases[cod].done++;
-  });
-
-  const sorted = Object.values(phases).sort((a,b) => {
-    return parseInt(a.cod.replace(/\D/g,'')) - parseInt(b.cod.replace(/\D/g,''));
-  });
-
-  for(const ph of sorted) {
-    if(ph.done < ph.total) return ph.cod;
-  }
-  return sorted[sorted.length-1]?.cod || null;
-}
-
-// Progresso real por fase usuário
 function calcProgress(tasks) {
   const byUserPhase = {};
   USER_PHASES.forEach(p => { byUserPhase[p.id]={total:0,done:0} });
