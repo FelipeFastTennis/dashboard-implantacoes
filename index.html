@@ -377,14 +377,30 @@ async function fetchAllTasks(projId) {
 // REGRA: a fase atual e a MAIS AVANCADA (maior numero) que ja tenha pelo menos
 // uma tarefa concluida (situacao=1) ou em andamento (situacao=3). Tarefas apenas
 // abertas(2), aguardando(4) ou a definir(5) numa fase anterior NAO seguram o
-// projeto nela. F05 (Documentacao) e ignorada por correr em paralelo.
+// Percentual de conclusao geral a partir do qual o projeto entra em Reta Final.
+const PCT_RETA_FINAL = 75;
+
+// Determina a fase atual do projeto a partir das tarefas reais.
+//
+// REGRAS:
+// - F01/F02 (pre-implantacao) e F05 (Documentacao) sao ignoradas.
+// - F10 a F16 (Mobiliarios, RH, Educacao, Play Fast, Marketing, Vestuario,
+//   Onboarding) correm EM PARALELO com a obra e NAO definem a fase sozinhas.
+// - Entre as fases que definem etapa (F03, F04, F06, F07, F08, F09), vale a
+//   MAIS AVANCADA que ja tenha tarefa concluida (situacao=1) ou em andamento (3).
+// - O projeto so entra em RETA FINAL quando o percentual GERAL de tarefas
+//   concluidas atinge PCT_RETA_FINAL, ou quando a F17 (Inauguracao) inicia.
 function getCurrentPhase(tasks) {
   if(!tasks || tasks.length === 0) return null;
 
-  // Tarefas que dependem de terceiros e ficam abertas travando o projeto
+  // Tarefas que dependem de concessionarias e ficam abertas travando o projeto
   const IGNORAR_NOME = ['solicitar a ligacao rede', 'solicitar a ligação rede'];
 
+  // Fases que definem a etapa do projeto (as demais sao paralelas)
+  const DEFINEM_ETAPA = [3,4,6,7,8,9];
+
   const phases = {};
+  let totalGeral = 0, doneGeral = 0, f17Iniciada = false, pontoAprovado = false, achouT129 = false;
 
   tasks.forEach(t => {
     const nomeLower = (t.nome || '').toLowerCase();
@@ -416,7 +432,6 @@ function getCurrentPhase(tasks) {
     if(!cod) return;
 
     const n = parseInt(cod.replace(/\D/g,''));
-    if(n === 5) return; // F05 ignorada
 
     // O campo "situacao" e a fonte confiavel.
     // 1=Concluido 2=Aberto 3=Em Andamento 4=Aguardando 5=Definir
@@ -424,11 +439,31 @@ function getCurrentPhase(tasks) {
     const isDone     = sit === 1;
     const isIniciada = sit === 1 || sit === 3;
 
+    // Percentual geral considera TODAS as fases (inclusive as paralelas)
+    totalGeral++;
+    if(isDone) doneGeral++;
+
+    // T129 "Ponto Aprovado" e o divisor entre Busca de Ponto e Negociacao.
+    // O codigo pode vir como "T129" ou "F04-T129"; o nome tambem serve de fallback.
+    const codTarefa = String(t.codigo || '');
+    if(/(^|-)T129$/i.test(codTarefa) || nomeLower.includes('ponto aprovado')) {
+      achouT129 = true;
+      if(isDone) pontoAprovado = true;
+    }
+
+    if(n === 17 && isIniciada) f17Iniciada = true;
+    if(!DEFINEM_ETAPA.includes(n)) return; // paralela: nao define etapa
+
     if(!phases[cod]) phases[cod] = {total:0, done:0, iniciadas:0, cod, n};
     phases[cod].total++;
     if(isDone) phases[cod].done++;
     if(isIniciada) phases[cod].iniciadas++;
   });
+
+  const pctGeral = totalGeral ? (doneGeral / totalGeral * 100) : 0;
+
+  // Reta Final: conclusao geral atingiu o corte, ou a inauguracao ja comecou
+  if(pctGeral >= PCT_RETA_FINAL || f17Iniciada) return 'F17';
 
   const sorted = Object.values(phases).sort((a,b) => a.n - b.n);
   if(!sorted.length) return null;
@@ -436,7 +471,14 @@ function getCurrentPhase(tasks) {
   const iniciadas = sorted.filter(ph => ph.iniciadas > 0);
   if(iniciadas.length === 0) return sorted[0].cod;
 
-  return iniciadas[iniciadas.length - 1].cod;
+  const faseCod = iniciadas[iniciadas.length - 1].cod;
+
+  // O projeto so entra em "Ponto: Neg. e Contratos" (F04) depois que a tarefa
+  // T129 "Ponto Aprovado" estiver concluida. Ate la, permanece em Busca de Ponto.
+  // Se a T129 nao existir no modelo do projeto, mantem o comportamento padrao.
+  if(faseCod === 'F04' && achouT129 && !pontoAprovado) return 'F03';
+
+  return faseCod;
 }
 
 function calcProgress(tasks) {
